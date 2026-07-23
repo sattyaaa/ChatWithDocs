@@ -1,0 +1,25 @@
+# Environments
+.venv/
+venv/
+ENV/
+env/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Environment variables / secrets
+.env
+
+# SQLite Databases
+database/*.db
+
+# User uploaded data / temporary files
+data/uploads/
+
+# IDE / Editor config
+.vscode/
+.idea/
+.DS_Store
