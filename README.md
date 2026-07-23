@@ -51,6 +51,37 @@ graph TD
 
 ---
 
+## Database Schema
+
+The application uses two database systems: SQLite for chat session persistence and Weaviate for vector storage.
+
+### SQLite (Relational Database)
+Stored locally in `database/chat.db`. It consists of two tables:
+- **chats**:
+  - `chat_id` (TEXT, Primary Key): Unique identifier for the chat session.
+  - `title` (TEXT): Title of the chat session.
+  - `created_at` (TIMESTAMP): Creation timestamp.
+  - `updated_at` (TIMESTAMP): Last updated timestamp.
+- **messages**:
+  - `message_id` (INTEGER, Primary Key, Autoincrement): Unique identifier for the message.
+  - `chat_id` (TEXT, Foreign Key -> `chats.chat_id` ON DELETE CASCADE): Chat session the message belongs to.
+  - `role` (TEXT): Sender role (`user` or `assistant`).
+  - `content` (TEXT): The message content.
+  - `created_at` (TIMESTAMP): Timestamp when the message was saved.
+
+### Weaviate (Vector Database)
+A collection named `Documents` stores the ingested document chunks:
+- **Properties**:
+  - `text` (TEXT): Raw text content of the chunk.
+  - `chat_id` (TEXT): ID of the chat session the document is associated with.
+  - `document_id` (TEXT): Unique identifier of the uploaded document.
+  - `filename` (TEXT): Name of the source file.
+  - `page` (INT): Page number of the chunk (applicable for PDFs).
+  - `chunk_id` (TEXT): Segment sequence identifier.
+  - `source` (TEXT): Source reference path.
+
+---
+
 ## Quick Start
 
 ### 1. Installation
