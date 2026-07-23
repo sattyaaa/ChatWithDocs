@@ -11,21 +11,23 @@ graph TD
     User([User]) <-->|Interacts| UI[Streamlit Frontend - app.py]
     UI <-->|Manage Chats & History| SQLite[(SQLite Database - chat.db)]
     
-    subgraph Ingestion Pipeline
+    subgraph Local Ingestion
         UI -->|Upload Files| Save[Save to data/uploads/]
         Save -->|Load Document| Load[Document Loaders - PDF/Word/TXT/MD]
         Load -->|Split Text| Split[Recursive Text Splitter]
-        Split -->|Compute Embeddings| HF[HuggingFace Embeddings - Local]
-        HF -->|Store Chunks & Meta| Weaviate[(Weaviate Cloud Database)]
+        Split -->|Compute Embeddings| HF[HuggingFace Embeddings - Local CPU]
     end
 
-    subgraph RAG Retrieval & Generation
+    subgraph Local Retrieval & Orchestration
         UI -->|Query RAG| Retrieve[Retrieve Relevant Chunks]
-        Weaviate -->|Vector Matches| Retrieve
-        Retrieve -->|Assemble Context| Prompt[System Prompt Construction]
-        Prompt -->|Invoke Generation| Groq[Groq API - Llama 3.3 70B]
-        Groq -->|Response & Sources| UI
+        Retrieve -->|Assemble Context| Prompt[Prompt Construction]
     end
+
+    %% External Systems
+    HF -->|Store Chunks & Meta| Weaviate[(Weaviate Cloud)]
+    Weaviate -->|Vector Matches| Retrieve
+    Prompt -->|Invoke Generation| Groq[Groq API - Llama 3.3 70B]
+    Groq -->|Response & Sources| UI
 ```
 
 ---
