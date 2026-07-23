@@ -56,7 +56,7 @@ graph TD
 ### 1. Installation
 ```bash
 # Clone the repository
-git clone <repository-url>
+git clone https://github.com/sattyaaa/ChatWithDocs.git
 cd QADoc
 
 # Create and activate virtual environment
