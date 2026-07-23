@@ -8,11 +8,23 @@ A Streamlit web application to chat with your documents (PDF, Word, Text, Markdo
 
 ```mermaid
 graph TD
-    User([User]) <--> UI[Streamlit UI]
+    User([User]) <--> UI[Streamlit Frontend]
     UI <--> SQLite[(SQLite Database)]
-    UI -->|Upload & Query| RAG[RAG Pipeline - LangChain]
-    RAG <-->|Vector Search| Weaviate[(Weaviate Cloud)]
-    RAG -->|Generate Response| Groq[Groq API - Llama 3.3]
+    
+    subgraph Ingestion Pipeline
+        UI -->|Upload Files| Parse[Parse & Split Documents]
+        Parse -->|Embed Chunks| Embed[Local Embeddings CPU]
+    end
+
+    subgraph Retrieval & Orchestration
+        UI -->|Query RAG| RAG[Retrieve Context & Format Prompt]
+    end
+
+    %% External Systems
+    Embed -->|Store Vectors| Weaviate[(Weaviate Cloud)]
+    Weaviate -->|Retrieve Match| RAG
+    RAG -->|Generate Answer| Groq[Groq API - Llama 3.3]
+    Groq -->|Response & Sources| UI
 ```
 
 ---
