@@ -57,7 +57,7 @@ graph TD
 ```bash
 # Clone the repository
 git clone https://github.com/sattyaaa/ChatWithDocs.git
-cd QADoc
+cd ChatWithDocs
 
 # Create and activate virtual environment
 python -m venv .venv
