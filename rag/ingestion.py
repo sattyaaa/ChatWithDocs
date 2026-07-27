@@ -20,7 +20,7 @@ from langchain_core.documents import Document
 from rag.config import get_vector_store
 
 from langchain_community.document_loaders import (
-    PyPDFLoader,
+    PyMuPDFLoader,
     Docx2txtLoader,
     TextLoader,
 )
@@ -63,7 +63,7 @@ def _load_documents(file_path: Path) -> list[Document]:
     suffix = file_path.suffix.lower()
 
     if suffix == ".pdf":
-        loader = PyPDFLoader(str(file_path))
+        loader = PyMuPDFLoader(str(file_path))
     elif suffix == ".docx":
         loader = Docx2txtLoader(str(file_path))
     elif suffix in (".txt", ".md"):

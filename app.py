@@ -226,7 +226,7 @@ if prompt := st.chat_input("Ask something about your documents...", submit_mode=
                     for doc in sources:
                         fname = doc.metadata.get("filename", "Unknown file")
                         page = doc.metadata.get("page")
-                        label = f"- `:material/description: {fname}`" + (f" (Page {page + 1})" if page is not None else "")
+                        label = f"- {fname}" + (f" (Page {page + 1})" if page is not None else "")
                         if label not in seen_sources:
                             seen_sources.add(label)
                             source_lines.append(label)
