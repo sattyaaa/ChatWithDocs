@@ -9,7 +9,7 @@ A Streamlit web application to chat with your documents (PDF, Word, Text, Markdo
 ```mermaid
 graph TD
     User([User]) <--> UI[Streamlit Frontend]
-    UI <--> SQLite[(SQLite Database)]
+    UI <--> MongoDB[(MongoDB Atlas)]
     
     subgraph Ingestion Pipeline
         UI -->|Upload Files| Parse[Parse & Split Documents]
@@ -35,7 +35,7 @@ graph TD
 - **Frontend / UI**: Streamlit
 - **Orchestration**: LangChain
 - **Vector Database**: Weaviate Cloud
-- **Relational Database**: SQLite
+- **NoSQL Database**: MongoDB Atlas
 - **File Processing**: pypdf, python-docx
 
 ### Models
@@ -53,21 +53,21 @@ graph TD
 
 ## Database Schema
 
-The application uses two database systems: SQLite for chat session persistence and Weaviate for vector storage.
+The application uses two database systems: MongoDB Atlas for chat session/message persistence and Weaviate for vector storage.
 
-### SQLite (Relational Database)
-Stored locally in `database/chat.db`. It consists of two tables:
+### MongoDB (NoSQL Document Database)
+Stored in a remote MongoDB Atlas cluster (`docqa_chat` database). It consists of two collections:
 - **chats**:
-  - `chat_id` (TEXT, Primary Key): Unique identifier for the chat session.
-  - `title` (TEXT): Title of the chat session.
-  - `created_at` (TIMESTAMP): Creation timestamp.
-  - `updated_at` (TIMESTAMP): Last updated timestamp.
+  - `_id` / `chat_id` (String, Primary Key): Unique identifier (UUID) for the chat session.
+  - `title` (String): Title of the chat session.
+  - `created_at` (Date): Creation timestamp.
+  - `updated_at` (Date): Last updated timestamp.
 - **messages**:
-  - `message_id` (INTEGER, Primary Key, Autoincrement): Unique identifier for the message.
-  - `chat_id` (TEXT, Foreign Key -> `chats.chat_id` ON DELETE CASCADE): Chat session the message belongs to.
-  - `role` (TEXT): Sender role (`user` or `assistant`).
-  - `content` (TEXT): The message content.
-  - `created_at` (TIMESTAMP): Timestamp when the message was saved.
+  - `_id` (ObjectId, Primary Key): Unique identifier for the message.
+  - `chat_id` (String): ID of the chat session the message belongs to.
+  - `role` (String): Sender role (`user` or `assistant`).
+  - `content` (String): The message content.
+  - `created_at` (Date): Timestamp when the message was saved.
 
 ### Weaviate (Vector Database)
 A collection named `Documents` stores the ingested document chunks:
@@ -104,6 +104,7 @@ Create a `.env` file in the root directory:
 GROQ_API_KEY=your_groq_api_key_here
 WEAVIATE_URL=your_weaviate_cluster_url_here
 WEAVIATE_API_KEY=your_weaviate_api_key_here
+MONGODB_URI=your_mongodb_connection_string_here
 ```
 
 ### 3. Run the App
