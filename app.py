@@ -29,7 +29,12 @@ st.set_page_config(
 )
 
 # Initialize database
-initialize_database()
+try:
+    initialize_database()
+except Exception as e:
+    st.error(f"⚠️ **Database Connection Error:** {e}")
+    st.info("💡 **Troubleshooting Tip:** This error typically indicates that your IP address is not whitelisted in the MongoDB Atlas Network Access settings. Please ensure your IP is whitelisted (or use `0.0.0.0/0` temporarily for testing) in your MongoDB Atlas Console.")
+    st.stop()
 
 # -----------------------
 # Session State
