@@ -10,7 +10,7 @@ A Streamlit web application to chat with your documents (PDF, Word, Text, Markdo
 graph TD
     User([User]) <--> UI[User Frontend: Streamlit]
     
-    subgraph RAG Orchestration (LangGraph Workflow)
+    subgraph RAG ["RAG Orchestration (LangGraph Workflow)"]
         UI -->|Ask Question| Graph[LangGraph Workflow: rag/graph.py]
         
         Graph -->|Node 1: load_history| Node_History[Load History]
@@ -25,7 +25,7 @@ graph TD
         Node_Generate -->|Context QA| LLM_QA[Groq: Llama 3.3 70B Versatile]
     end
 
-    subgraph Data & Retrieval Layer
+    subgraph Data ["Data & Retrieval Layer"]
         UI -->|Ingest Files| Ingestion[Ingestion: rag/ingestion.py]
         Ingestion -->|Index chunks under user tenant| Weaviate[(Weaviate Cloud)]
         Node_Retrieve -->|Multi-Tenant Vector Search| Weaviate
