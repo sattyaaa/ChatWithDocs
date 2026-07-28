@@ -8,33 +8,28 @@ A Streamlit web application to chat with your documents (PDF, Word, Text, Markdo
 
 ```mermaid
 graph TD
-    User([User]) <--> UI[User Frontend: Streamlit]
-    
-    subgraph RAG ["RAG Orchestration (LangGraph Workflow)"]
-        UI -->|Ask Question| Graph[LangGraph Workflow: rag/graph.py]
-        
-        Graph -->|Node 1: load_history| Node_History[Load History]
-        Node_History <--> DB_Messages[(MongoDB: chats & messages)]
-        
-        Node_History -->|Node 2: rephrase_query| Node_Rephrase[Rephrase Query]
-        Node_Rephrase -->|Condense context| LLM_Rephrase[Groq: Llama 3.1 8B Instant]
-        
-        Node_Rephrase -->|Node 3: retrieve_documents| Node_Retrieve[Retrieve Documents]
-        
-        Node_Retrieve -->|Node 4: generate_answer| Node_Generate[Generate Answer]
-        Node_Generate -->|Context QA| LLM_QA[Groq: Llama 3.3 70B Versatile]
+    User([👤 User]) <--> UI[Streamlit Frontend]
+
+    UI -->|Upload documents| Ingestion[rag/ingestion.py\nChunk · Embed · Index]
+    Ingestion -->|Vectors per-user tenant| VDB[(Weaviate Cloud)]
+
+    UI <-->|Auth & chat sessions| MongoDB[(MongoDB Atlas)]
+
+    UI -->|Ask a question| N1
+
+    subgraph LangGraph["🔁 LangGraph RAG Workflow — rag/graph.py"]
+        direction TB
+        N1["① load_history\nLoad recent chat turns\nfrom MongoDB"]
+        N2["② rephrase_query\nCondense follow-up question\nGroq · llama-3.1-8b-instant"]
+        N3["③ retrieve_documents\nVector search by rephrased query\nWeaviate · user tenant"]
+        N4["④ generate_answer\nSynthesize answer from context\nGroq · llama-3.3-70b-versatile"]
+
+        N1 --> N2 --> N3 --> N4
     end
 
-    subgraph Data ["Data & Retrieval Layer"]
-        UI -->|Ingest Files| Ingestion[Ingestion: rag/ingestion.py]
-        Ingestion -->|Index chunks under user tenant| Weaviate[(Weaviate Cloud)]
-        Node_Retrieve -->|Multi-Tenant Vector Search| Weaviate
-        
-        UI -->|User Account Logic| Auth[Auth Logic: database/auth.py]
-        Auth <--> DB_Users[(MongoDB: users collection)]
-    end
-
-    Node_Generate -->|Answer & Source Tooltips| UI
+    N1 <-->|Recent messages| MongoDB
+    N3 <-->|Top-k chunks| VDB
+    N4 -->|Answer + source chunks| UI
 ```
 
 ---
