@@ -8,24 +8,11 @@ A Streamlit web application to chat with your documents (PDF, Word, Text, Markdo
 
 ```mermaid
 graph TD
-    User([User]) <--> UI_Controller[Streamlit UI Controller: app.py]
+    User([User]) <--> UI[User Frontend: Streamlit]
     
-    subgraph UI Package [ui/]
-        UI_Controller -->|Renders| UI_Auth[Authentication: auth.py]
-        UI_Controller -->|Renders| UI_Sidebar[Sidebar & History: sidebar.py]
-        UI_Controller -->|Renders| UI_Uploader[Document Uploader: uploader.py]
-        UI_Controller -->|Renders| UI_Components[Source Badges: components.py]
-    end
-
-    UI_Auth -->|Authenticate / Register| Auth[Auth Logic: database/auth.py]
-    Auth <--> DB_Users[(MongoDB: users collection)]
-
-    UI_Uploader -->|Process Files| Ingestion[Ingestion: rag/ingestion.py]
-    Ingestion -->|Ingest under Tenant user_id| Weaviate[(Weaviate Cloud)]
-
-    UI_Controller -->|Ask Question| Graph[LangGraph Workflow: rag/graph.py]
-
-    subgraph LangGraph State Machine
+    subgraph RAG Orchestration (LangGraph Workflow)
+        UI -->|Ask Question| Graph[LangGraph Workflow: rag/graph.py]
+        
         Graph -->|Node 1: load_history| Node_History[Load History]
         Node_History <--> DB_Messages[(MongoDB: chats & messages)]
         
@@ -33,13 +20,21 @@ graph TD
         Node_Rephrase -->|Condense context| LLM_Rephrase[Groq: Llama 3.1 8B Instant]
         
         Node_Rephrase -->|Node 3: retrieve_documents| Node_Retrieve[Retrieve Documents]
-        Node_Retrieve -->|Multi-Tenant Query| Weaviate
         
         Node_Retrieve -->|Node 4: generate_answer| Node_Generate[Generate Answer]
         Node_Generate -->|Context QA| LLM_QA[Groq: Llama 3.3 70B Versatile]
     end
 
-    Node_Generate -->|Response & Sources| UI_Controller
+    subgraph Data & Retrieval Layer
+        UI -->|Ingest Files| Ingestion[Ingestion: rag/ingestion.py]
+        Ingestion -->|Index chunks under user tenant| Weaviate[(Weaviate Cloud)]
+        Node_Retrieve -->|Multi-Tenant Vector Search| Weaviate
+        
+        UI -->|User Account Logic| Auth[Auth Logic: database/auth.py]
+        Auth <--> DB_Users[(MongoDB: users collection)]
+    end
+
+    Node_Generate -->|Answer & Source Tooltips| UI
 ```
 
 ---
