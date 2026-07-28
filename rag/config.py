@@ -15,7 +15,7 @@ import os
 
 import weaviate
 from weaviate.classes.init import Auth
-from weaviate.classes.config import Property, DataType
+from weaviate.classes.config import Property, DataType, Configure
 
 from langchain_groq import ChatGroq
 from langchain_huggingface import HuggingFaceEmbeddings
@@ -69,6 +69,14 @@ llm = ChatGroq(
     temperature=0.2,
 )
 
+REPHRASE_LLM_MODEL = "llama-3.1-8b-instant"
+
+rephrase_llm = ChatGroq(
+    model = REPHRASE_LLM_MODEL,
+    api_key = SecretStr(GROQ_API_KEY),
+    temperature=0.1,
+)
+
 
 
 from weaviate.classes.init import Auth, Timeout, AdditionalConfig
@@ -117,6 +125,7 @@ def get_client() -> weaviate.WeaviateClient:
 def create_collection_if_not_exists():
     """
     Create the Weaviate collection if it does not already exist.
+    If it exists but does not have multi-tenancy enabled, drop and recreate it.
 
     Raises:
         RuntimeError:
@@ -124,7 +133,19 @@ def create_collection_if_not_exists():
     """
     c = get_client()
     if c.collections.exists(COLLECTION_NAME):
-        return
+        try:
+            config = c.collections.get(COLLECTION_NAME).config.get()
+            if config.multi_tenancy_config and config.multi_tenancy_config.enabled:
+                return
+            else:
+                # Need to recreate collection to enable multi-tenancy
+                c.collections.delete(COLLECTION_NAME)
+        except Exception as e:
+            # Fallback to recreate in case of config fetch error
+            try:
+                c.collections.delete(COLLECTION_NAME)
+            except Exception:
+                pass
 
     try:
         _=c.collections.create(
@@ -137,7 +158,8 @@ def create_collection_if_not_exists():
                 Property(name="page", data_type=DataType.INT),
                 Property(name="chunk_id", data_type=DataType.TEXT),
                 Property(name="source", data_type=DataType.TEXT),
-            ]
+            ],
+            multi_tenancy_config=Configure.multi_tenancy(enabled=True)
         )
 
     except Exception as exc:
@@ -162,5 +184,8 @@ def get_vector_store() -> WeaviateVectorStore:
         client=c,
         index_name=COLLECTION_NAME,
         embedding=embeddings,
-        text_key="text"
+        text_key="text",
+        use_multi_tenancy=True
     )
+
+

@@ -1,11 +1,7 @@
 import streamlit as st
-from pathlib import Path
 import tracemalloc
+import logging
 tracemalloc.start()
-
-
-UPLOAD_DIR = Path("data/uploads")
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 from database.database import (
     initialize_database,
@@ -13,12 +9,14 @@ from database.database import (
     get_all_chats,
     get_chat_messages,
     save_message,
-    delete_chat,
     update_chat_title,
 )
 
-from rag.ingestion import ingest_documents, delete_chat_embeddings
-from rag.chain import ask_question
+from ui.auth import render_auth_screen
+from ui.sidebar import render_sidebar
+from ui.uploader import render_document_uploader
+from ui.components import render_sources_badges
+from rag.graph import ask_question
 
 # Page Configuration with modern Streamlit options
 st.set_page_config(
@@ -33,123 +31,27 @@ try:
     initialize_database()
 except Exception as e:
     st.error(f"⚠️ **Database Connection Error:** {e}")
-    st.info("💡 **Troubleshooting Tip:** This error typically indicates that your IP address is not whitelisted in the MongoDB Atlas Network Access settings. Please ensure your IP is whitelisted (or use `0.0.0.0/0` temporarily for testing) in your MongoDB Atlas Console.")
+    st.info("💡 **Troubleshooting Tip:** This error typically indicates that your IP address is not whitelisted in the MongoDB Atlas settings.")
     st.stop()
 
-# -----------------------
-# Session State
-# -----------------------
+# Initialize session state variables
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
+    st.session_state.user_id = None
+    st.session_state.username = None
+
 if "chat_id" not in st.session_state:
     st.session_state.chat_id = None
 
+# 1. Auth Guard
+if not st.session_state.authenticated:
+    render_auth_screen()
+    st.stop()
 
-def render_document_uploader(key_suffix: str = ""):
-    st.subheader("📂 Upload documents")
+# 2. Sidebar Layout
+render_sidebar()
 
-    uploaded_files = st.file_uploader(
-        "Choose documents (.pdf, .txt, .docx, .md)",
-        type=["pdf", "txt", "docx", "md"],
-        accept_multiple_files=True,
-        key=f"uploader_{key_suffix}",
-    )
-
-    if st.button(":material/upload: Process & ingest", key=f"process_btn_{key_suffix}"):
-        if not uploaded_files:
-            st.warning("Please select at least one document.")
-        else:
-            is_new_chat = st.session_state.chat_id is None
-            if is_new_chat:
-                st.session_state.chat_id = create_chat(title="New Chat")
-
-            file_paths = []
-            for uploaded_file in uploaded_files:
-                file_path = UPLOAD_DIR / uploaded_file.name
-                with open(file_path, "wb") as f:
-                    f.write(uploaded_file.getbuffer())
-                file_paths.append(file_path)
-
-            with st.spinner("Ingesting documents into vector database..."):
-                num_chunks = ingest_documents(
-                    file_paths=file_paths,
-                    chat_id=st.session_state.chat_id,
-                )
-
-            if num_chunks > 0:
-                success_msg = f"Ingested {len(file_paths)} document(s) ({num_chunks} chunks)."
-                if is_new_chat:
-                    with st.spinner("Analyzing document content to generate chat title..."):
-                        try:
-                            # Ask the RAG system directly what the document is about
-                            rag_res = ask_question(
-                                query="Summarize the main topic of these uploaded documents in a concise, professional title of 2 to 4 words. Respond with ONLY the title. Do not include quotes, markdown formatting, or preamble.",
-                                chat_id=st.session_state.chat_id,
-                            )
-                            title = rag_res.get("answer", "").strip().strip('"').strip("'").strip("`")
-                            if title and "couldn't find" not in title.lower():
-                                update_chat_title(st.session_state.chat_id, title)
-                            else:
-                                update_chat_title(st.session_state.chat_id, uploaded_files[0].name)
-                        except Exception:
-                            update_chat_title(st.session_state.chat_id, uploaded_files[0].name)
-                    
-                    st.session_state.ingestion_success = success_msg
-                    st.rerun()
-                else:
-                    st.success(success_msg)
-            else:
-                if is_new_chat:
-                    # Clean up temporary chat if ingestion failed completely
-                    delete_chat(st.session_state.chat_id)
-                    st.session_state.chat_id = None
-                st.error("Failed to ingest documents or document was empty.")
-
-
-# -----------------------
-# Sidebar
-# -----------------------
-with st.sidebar:
-    st.title("📚 Document QA")
-
-    if st.button(":material/add: New chat", type="primary"):
-        st.session_state.chat_id = None
-        st.rerun()
-
-    st.divider()
-
-    st.subheader("💬 Chat history")
-    chats = get_all_chats()
-
-    if not chats:
-        st.caption("No chat history available.")
-
-    for chat in chats:
-        col1, col2 = st.sidebar.columns([5, 1])
-        is_active = (chat["chat_id"] == st.session_state.chat_id)
-        btn_label = f":material/chat: {chat['title']}" if is_active else chat["title"]
-
-        with col1:
-            if st.button(
-                btn_label,
-                key=f"chat_{chat['chat_id']}",
-            ):
-                st.session_state.chat_id = chat["chat_id"]
-                st.rerun()
-
-        with col2:
-            if st.button(
-                ":material/delete:",
-                key=f"del_{chat['chat_id']}",
-                help="Delete chat",
-            ):
-                delete_chat(chat["chat_id"])
-                delete_chat_embeddings(chat["chat_id"])
-                if st.session_state.chat_id == chat["chat_id"]:
-                    st.session_state.chat_id = None
-                st.rerun()
-
-# -----------------------
-# Welcome Screen (No Active Chat)
-# -----------------------
+# 3. Welcome Screen (No Active Chat Session)
 if st.session_state.chat_id is None:
     st.title("📄 Document QA Assistant")
     
@@ -167,14 +69,16 @@ if st.session_state.chat_id is None:
         
         st.divider()
         if st.button(":material/rocket_launch: Start a new chat", type="primary"):
-            st.session_state.chat_id = create_chat()
+            try:
+                st.session_state.chat_id = create_chat(st.session_state.user_id)
+            except Exception as e:
+                st.error(f"Failed to start chat: {e}")
+                st.stop()
             st.rerun()
     st.stop()
 
-# -----------------------
-# Main Chat Interface
-# -----------------------
-chats = get_all_chats()
+# 4. Main Chat Interface
+chats = get_all_chats(st.session_state.user_id)
 current_chat = next((c for c in chats if c["chat_id"] == st.session_state.chat_id), None)
 chat_title = current_chat["title"] if current_chat else "Chat session"
 
@@ -190,26 +94,32 @@ with st.expander("📂 Ingest more documents to this chat"):
 # Display message history
 messages = get_chat_messages(st.session_state.chat_id)
 
-for message in messages:
+for msg_idx, message in enumerate(messages):
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
+        if message.get("role") == "assistant" and "sources" in message and message["sources"]:
+            render_sources_badges(message["sources"], key_prefix=f"hist_btn_{msg_idx}")
 
-# -----------------------
 # Chat Input & Answer Generation
-# -----------------------
 if prompt := st.chat_input("Ask something about your documents...", submit_mode="disable"):
 
     # Update chat title automatically on first user prompt
     if chat_title == "New Chat" and not messages:
         new_title = prompt[:30] + "..." if len(prompt) > 30 else prompt
-        update_chat_title(st.session_state.chat_id, new_title)
+        try:
+            update_chat_title(st.session_state.chat_id, new_title)
+        except Exception:
+            pass
 
     # Save and display user message
-    save_message(
-        chat_id=st.session_state.chat_id,
-        role="user",
-        content=prompt,
-    )
+    try:
+        save_message(
+            chat_id=st.session_state.chat_id,
+            role="user",
+            content=prompt,
+        )
+    except Exception as e:
+        st.warning("Database write was interrupted, but proceeding...")
 
     with st.chat_message("user"):
         st.markdown(prompt)
@@ -221,33 +131,36 @@ if prompt := st.chat_input("Ask something about your documents...", submit_mode=
                 res = ask_question(
                     query=prompt,
                     chat_id=st.session_state.chat_id,
+                    tenant=st.session_state.user_id,
                 )
                 assistant_response = res.get("answer", "")
                 sources = res.get("sources", [])
-
-                if sources:
-                    source_lines = []
-                    seen_sources = set()
-                    for doc in sources:
-                        fname = doc.metadata.get("filename", "Unknown file")
-                        page = doc.metadata.get("page")
-                        label = f"- {fname}" + (f" (Page {page + 1})" if page is not None else "")
-                        if label not in seen_sources:
-                            seen_sources.add(label)
-                            source_lines.append(label)
-
-                    if source_lines:
-                        assistant_response += "\n\n**Sources:**\n" + "\n".join(source_lines)
+                
+                source_dicts = []
+                for doc in sources:
+                    source_dicts.append({
+                        "filename": doc.metadata.get("filename", "Unknown file"),
+                        "page": doc.metadata.get("page"),
+                        "content": doc.page_content
+                    })
 
             except Exception as e:
                 assistant_response = f"An error occurred while generating the answer: {e}"
+                source_dicts = []
 
             st.markdown(assistant_response)
+            if source_dicts:
+                render_sources_badges(source_dicts, key_prefix="new_btn")
 
-    save_message(
-        chat_id=st.session_state.chat_id,
-        role="assistant",
-        content=assistant_response,
-    )
+    try:
+        save_message(
+            chat_id=st.session_state.chat_id,
+            role="assistant",
+            content=assistant_response,
+            sources=source_dicts
+        )
+    except Exception:
+        # Ignore thread cancellation exceptions silently
+        pass
 
     st.rerun()

@@ -38,17 +38,19 @@ def _build_filter(
 def retrieve_documents(
     query: str,
     chat_id: str,
+    tenant: str,
     document_ids: list[str] | None = None,
     top_k: int = TOP_K,
 ) -> list[Document]:
     """
-    Retrieve the most relevant document chunks for a query.
+    Retrieve the most relevant document chunks for a query under a tenant.
 
     Args:
         query: User's question
         chat_id: Unique id of current chat
-        document_ids: Optional list of document ids to searcj within.
-        top_K: Maximum number of chunks to return
+        tenant: Unique identifier of the tenant (user_id)
+        document_ids: Optional list of document ids to search within.
+        top_k: Maximum number of chunks to return
 
     Returns:
         A list of relevant langchain Document objects.
@@ -64,7 +66,8 @@ def retrieve_documents(
         return vector_store.similarity_search(
             query=query,
             k=top_k,
-            filters=metadata_filter
+            filters=metadata_filter,
+            tenant=tenant
         )
     except Exception:
         # Re-fetch vector store instance with fresh connection and retry once
@@ -72,5 +75,6 @@ def retrieve_documents(
         return vector_store.similarity_search(
             query=query,
             k=top_k,
-            filters=metadata_filter
+            filters=metadata_filter,
+            tenant=tenant
         )

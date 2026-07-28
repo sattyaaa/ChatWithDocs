@@ -155,7 +155,7 @@ def _add_metadata(
 
 
 
-def ingest_documents(file_paths: list[Path], chat_id: str) ->int:
+def ingest_documents(file_paths: list[Path], chat_id: str, tenant: str) ->int:
     """
     Ingest one or more documents into the Weaviate vector store.
 
@@ -163,6 +163,7 @@ def ingest_documents(file_paths: list[Path], chat_id: str) ->int:
     Args:
         file_paths: Paths to the documents to be ingested.
         chat_id: Unique identifier for the current chat session.
+        tenant: Unique identifier of the tenant (user_id).
 
     Returns:
         The total number of document chunks successfully stored.
@@ -184,7 +185,7 @@ def ingest_documents(file_paths: list[Path], chat_id: str) ->int:
                 document_id=document_id,
                 filename=file_path.name,
             )
-            _ = vector_store.add_documents(chunks_with_meta)
+            _ = vector_store.add_documents(chunks_with_meta, tenant=tenant)
             total_chunks += len(chunks_with_meta)
 
             logger.info(
@@ -195,29 +196,29 @@ def ingest_documents(file_paths: list[Path], chat_id: str) ->int:
 
         except Exception as e:
             logger.error(
-                f"Failed to ingest '{file_path.name}'"
+                f"Failed to ingest '{file_path.name}': {e}"
             )
             continue
 
     return total_chunks
 
 
-def delete_chat_embeddings(chat_id: str) -> None:
+def delete_chat_embeddings(chat_id: str, tenant: str) -> None:
     """
-    Delete all vector embeddings associated with a specific chat_id.
+    Delete all vector embeddings associated with a specific chat_id under a tenant.
     """
     from weaviate.classes.query import Filter
     from rag.config import get_client, COLLECTION_NAME
 
     try:
         client = get_client()
-        collection = client.collections.get(COLLECTION_NAME)
+        collection = client.collections.get(COLLECTION_NAME).with_tenant(tenant)
         response = collection.data.delete_many(
             where=Filter.by_property("chat_id").equal(chat_id)
         )
         logger.info(
-            f"Deleted embeddings for chat_id '{chat_id}': "
+            f"Deleted embeddings for chat_id '{chat_id}' under tenant '{tenant}': "
             f"{response.successful} successful, {response.failed} failed."
         )
     except Exception as e:
-        logger.error(f"Failed to delete embeddings for chat_id '{chat_id}': {e}")
+        logger.error(f"Failed to delete embeddings for chat_id '{chat_id}' under tenant '{tenant}': {e}")

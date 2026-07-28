@@ -40,22 +40,24 @@ def initialize_database() -> None:
         raise RuntimeError(f"Failed to connect to MongoDB: {e}")
 
 
-def create_chat(title: str = "New Chat") -> str:
+def create_chat(user_id: str, title: str = "New Chat") -> str:
     """
     Create a new chat conversation.
 
     Args:
+        user_id: The ID of the user owning this chat.
         title: Initial title for chat
     
     Returns: 
         The unique ID of the newly created chat.
     """
     chat_id = str(uuid4())
-    now = datetime.datetime.utcnow()
+    now = datetime.datetime.now(datetime.timezone.utc)
 
     chats_collection.insert_one({
         "_id": chat_id,
         "chat_id": chat_id,
+        "user_id": user_id,
         "title": title,
         "created_at": now,
         "updated_at": now
@@ -64,21 +66,25 @@ def create_chat(title: str = "New Chat") -> str:
     return chat_id
 
 
-def get_all_chats() -> list[dict]:
+def get_all_chats(user_id: str) -> list[dict]:
     """
     Retrieve all chats ordered by most recently updated.
+
+    Args:
+        user_id: The ID of the user.
 
     Returns:
         A list of chat records.
     """
-    chats = chats_collection.find().sort("updated_at", -1)
+    chats = chats_collection.find({"user_id": user_id}).sort("updated_at", -1)
     return list(chats)
 
 
 def save_message(
     chat_id: str,
     role: str,
-    content: str
+    content: str,
+    sources: list[dict] | None = None
 ) -> None:
     """
     Save a message to a chat.
@@ -87,18 +93,23 @@ def save_message(
         chat_id: The ID of the chat.
         role: The role of the message sender (user or assistant).
         content: The content of the message.
+        sources: Optional list of source chunk metadata dicts.
     """
     if role not in {"user", "assistant"}:
         raise ValueError("Role must be either 'user' or 'assistant'.")
         
-    now = datetime.datetime.utcnow()
+    now = datetime.datetime.now(datetime.timezone.utc)
 
-    messages_collection.insert_one({
+    doc = {
         "chat_id": chat_id,
         "role": role,
         "content": content,
         "created_at": now
-    })
+    }
+    if sources:
+        doc["sources"] = sources
+
+    messages_collection.insert_one(doc)
 
     chats_collection.update_one(
         {"_id": chat_id},
@@ -125,6 +136,33 @@ def get_chat_messages(chat_id: str) -> list[dict]:
     return messages
 
 
+def get_recent_chat_messages(chat_id: str, limit: int = 10) -> list[dict]:
+    """
+    Retrieve the most recent messages for a chat, ordered chronologically.
+
+    Args:
+        chat_id: The ID of the chat
+        limit: The maximum number of recent messages to return
+
+    Returns: 
+        A list of messages ordered chronologically.
+    """
+    # Fetch latest messages first
+    messages = list(
+        messages_collection.find({"chat_id": chat_id})
+        .sort("created_at", -1)
+        .limit(limit)
+    )
+    
+    # Reverse to restore chronological order (older -> newer)
+    messages.reverse()
+    
+    for msg in messages:
+        msg["message_id"] = str(msg["_id"])
+        
+    return messages
+
+
 def update_chat_title(
     chat_id: str,
     title: str
@@ -141,7 +179,7 @@ def update_chat_title(
         {
             "$set": {
                 "title": title,
-                "updated_at": datetime.datetime.utcnow()
+                "updated_at": datetime.datetime.now(datetime.timezone.utc)
             }
         }
     )
