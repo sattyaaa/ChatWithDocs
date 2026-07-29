@@ -8,6 +8,13 @@ from uuid import uuid4
 from pymongo import MongoClient
 from dotenv import load_dotenv
 
+from database.redis_client import (
+    get_redis_client,
+    cache_push_message,
+    cache_get_messages,
+    cache_clear,
+)
+
 # Load .env variables
 load_dotenv()
 
@@ -30,6 +37,7 @@ messages_collection = db.get_collection("messages")
 def initialize_database() -> None:
     """
     Verify the connection to MongoDB and ensure indexes are created.
+    Also attempts to warm up/verify the Redis client connection.
     """
     try:
         # Ping the admin database to verify the connection is alive
@@ -38,6 +46,12 @@ def initialize_database() -> None:
         messages_collection.create_index("chat_id")
     except Exception as e:
         raise RuntimeError(f"Failed to connect to MongoDB: {e}")
+
+    # Attempt to initialize Redis client. If it fails, it will gracefully disable caching.
+    try:
+        get_redis_client()
+    except Exception:
+        pass
 
 
 def create_chat(user_id: str, title: str = "New Chat") -> str:
@@ -116,6 +130,14 @@ def save_message(
         {"$set": {"updated_at": now}}
     )
 
+    # Cache the message in Redis
+    try:
+        cache_doc = dict(doc)
+        cache_doc["message_id"] = str(cache_doc["_id"])
+        cache_push_message(chat_id, cache_doc)
+    except Exception:
+        pass
+
 
 def get_chat_messages(chat_id: str) -> list[dict]:
     """
@@ -127,11 +149,27 @@ def get_chat_messages(chat_id: str) -> list[dict]:
     Returns: 
         A list of messages ordered chronologically.
     """
+    # Try fetching from Redis first
+    try:
+        cached_messages = cache_get_messages(chat_id)
+        if cached_messages is not None:
+            return cached_messages
+    except Exception:
+        pass
+
     messages = list(messages_collection.find({"chat_id": chat_id}).sort("created_at", 1))
     
     # Map _id object to message_id as string for downstream compatibility
     for msg in messages:
         msg["message_id"] = str(msg["_id"])
+
+    # Re-populate the Redis cache
+    try:
+        cache_clear(chat_id)
+        for msg in messages:
+            cache_push_message(chat_id, msg)
+    except Exception:
+        pass
         
     return messages
 
@@ -147,20 +185,16 @@ def get_recent_chat_messages(chat_id: str, limit: int = 10) -> list[dict]:
     Returns: 
         A list of messages ordered chronologically.
     """
-    # Fetch latest messages first
-    messages = list(
-        messages_collection.find({"chat_id": chat_id})
-        .sort("created_at", -1)
-        .limit(limit)
-    )
-    
-    # Reverse to restore chronological order (older -> newer)
-    messages.reverse()
-    
-    for msg in messages:
-        msg["message_id"] = str(msg["_id"])
-        
-    return messages
+    try:
+        cached_messages = cache_get_messages(chat_id, limit=limit)
+        if cached_messages is not None:
+            return cached_messages
+    except Exception:
+        pass
+
+    # Cache miss: Load all messages (which populates the cache) and slice
+    all_messages = get_chat_messages(chat_id)
+    return all_messages[-limit:] if len(all_messages) > limit else all_messages
 
 
 def update_chat_title(
@@ -187,10 +221,15 @@ def update_chat_title(
 
 def delete_chat(chat_id: str) -> None:
     """
-    Delete a chat and all its associated messages.
+    Delete a chat and all its associated messages. Also clears the Redis cache.
 
     Args:
         chat_id: The ID of the chat to delete.
     """
+    try:
+        cache_clear(chat_id)
+    except Exception:
+        pass
+
     chats_collection.delete_one({"_id": chat_id})
     messages_collection.delete_many({"chat_id": chat_id})

@@ -87,6 +87,7 @@ graph LR
 - **Orchestration**: LangGraph (compiled state machine workflow)
 - **Vector Database**: Weaviate Cloud (with native Multi-Tenancy per user)
 - **NoSQL Database**: MongoDB Atlas (persisting chat sessions, history, and users)
+- **Caching Layer**: Redis (for caching chat session messages)
 - **File Processing**: pypdf, python-docx
 
 ### Models
@@ -101,45 +102,6 @@ graph LR
 - Microsoft Word (.docx)
 - Plain Text (.txt)
 - Markdown (.md)
-
----
-
-## Database Schema
-
-### MongoDB (NoSQL Document Database)
-Stored in a remote MongoDB Atlas cluster (`docqa_chat` database) with three collections:
-- **users**:
-  - `_id` (ObjectId, Primary Key): Unique identifier.
-  - `username` (String): Case-insensitive lowercase login username.
-  - `password_hash` (String): Hashed password using PBKDF2 HMAC SHA-256 (100k iterations).
-  - `created_at` (Date): Creation timestamp.
-- **chats**:
-  - `_id` / `chat_id` (String, Primary Key): Unique identifier (UUID) for the chat session.
-  - `user_id` (String): Owner user's ID string.
-  - `title` (String): Title of the chat session.
-  - `created_at` (Date): Creation timestamp.
-  - `updated_at` (Date): Last updated timestamp.
-- **messages**:
-  - `_id` (ObjectId, Primary Key): Unique identifier for the message.
-  - `chat_id` (String): ID of the parent chat session.
-  - `role` (String): Sender role (`user` or `assistant`).
-  - `content` (String): The message content.
-  - `sources` (Array, Optional): List of source dictionaries `[{"filename": "doc.pdf", "page": 1, "content": "chunk text"}]` for assistant responses.
-  - `created_at` (Date): Timestamp when the message was saved.
-
-### Weaviate (Vector Database)
-A collection named `Documents` stores the ingested document chunks:
-- **Multi-Tenancy**: Native Weaviate partitioning enabled (`use_multi_tenancy=True`). Shard routing uses the logged-in user's MongoDB `user_id` string as the `tenant` key.
-- **Properties**:
-  - `text` (TEXT): Raw text content of the chunk.
-  - `chat_id` (TEXT): ID of the chat session.
-  - `document_id` (TEXT): Unique identifier of the source file.
-  - `filename` (TEXT): Name of the source file.
-  - `page` (INT): Page number of the chunk (0-indexed, applicable for PDFs).
-  - `chunk_id` (TEXT): Segment sequence identifier.
-  - `source` (TEXT): Source reference path.
-
----
 
 ## Quick Start
 
