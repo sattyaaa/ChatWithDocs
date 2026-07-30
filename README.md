@@ -126,7 +126,7 @@ GROQ_API_KEY=your_groq_api_key_here
 WEAVIATE_URL=your_weaviate_cluster_url_here
 WEAVIATE_API_KEY=your_weaviate_api_key_here
 MONGODB_URI=your_mongodb_connection_string_here
-REDIS_URL=your_redis_connection_url_here
+REDIS_URL=redis://your_redis_tcp_connection_url_here
 ```
 
 ### 3. Run the App
