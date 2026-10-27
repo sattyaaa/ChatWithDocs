@@ -8,6 +8,8 @@ import {
   BookOpen,
   Sparkles,
   Loader2,
+  MessageSquare,
+  FileText,
 } from 'lucide-react';
 
 import {
@@ -16,12 +18,14 @@ import {
   deleteChat,
   fetchMessages,
   askQuestion,
+  fetchChatDocuments,
 } from './api/client';
 
 import Sidebar from './components/Sidebar';
 import Citations from './components/Citations';
 import FileUploadModal from './components/FileUploadModal';
 import AuthScreen from './components/AuthScreen';
+import ChatDocumentsTab from './components/ChatDocumentsTab';
 
 export default function App() {
   // 1. Auth State (persisted in localStorage)
@@ -30,9 +34,11 @@ export default function App() {
     return saved ? JSON.parse(saved) : null;
   });
 
-  // 2. Chat & Message State
+  // 2. Chat, Tabs & Message State
   const [chats, setChats] = useState([]);
   const [activeChatId, setActiveChatId] = useState(null);
+  const [activeTab, setActiveTab] = useState('chat'); // 'chat' | 'documents'
+  const [docCount, setDocCount] = useState(0);
   const [messages, setMessages] = useState([]);
   const [inputPrompt, setInputPrompt] = useState('');
   const [isLoadingAnswer, setIsLoadingAnswer] = useState(false);
@@ -43,6 +49,7 @@ export default function App() {
 
   // Sync user with localStorage
   const handleAuthSuccess = (userData) => {
+
     setUser(userData);
     localStorage.setItem('qadoc_user', JSON.stringify(userData));
   };
@@ -74,14 +81,26 @@ export default function App() {
     }
   };
 
-  // Load messages when active chat changes
+  // Load messages and document count when active chat changes
   useEffect(() => {
     if (activeChatId) {
       loadMessages(activeChatId);
+      loadDocCount(activeChatId);
     } else {
       setMessages([]);
+      setDocCount(0);
     }
   }, [activeChatId]);
+
+  const loadDocCount = async (chatId) => {
+    if (!user?.user_id) return;
+    try {
+      const docs = await fetchChatDocuments(chatId, user.user_id);
+      setDocCount(docs.length);
+    } catch (err) {
+      console.warn('Failed to fetch doc count:', err);
+    }
+  };
 
   const loadMessages = async (chatId) => {
     try {
@@ -92,6 +111,7 @@ export default function App() {
       console.error('Failed to load messages:', err);
     }
   };
+
 
   const scrollToBottom = () => {
     setTimeout(() => {
@@ -228,14 +248,36 @@ export default function App() {
       <main className="chat-main">
         {/* Top Header Bar */}
         <header className="top-bar">
-          <div className="chat-title-display">
-            {currentChat?.title || 'Document QA'}
+          <div className="top-bar-left">
+            <div className="chat-title-display">
+              {currentChat?.title || 'Document QA'}
+            </div>
+
+            {/* Navigation Tabs (Chat vs Documents) */}
+            <div className="chat-tabs-nav">
+              <button
+                className={`chat-tab-btn ${activeTab === 'chat' ? 'active' : ''}`}
+                onClick={() => setActiveTab('chat')}
+              >
+                <MessageSquare size={13} />
+                <span>Chat</span>
+              </button>
+
+              <button
+                className={`chat-tab-btn ${activeTab === 'documents' ? 'active' : ''}`}
+                onClick={() => setActiveTab('documents')}
+              >
+                <FileText size={13} />
+                <span>Documents</span>
+                <span className="tab-count-badge">{docCount}</span>
+              </button>
+            </div>
           </div>
 
           <div className="top-bar-actions">
             <span className="model-badge">Groq GPT-OSS-120B • ReAct</span>
             <button
-              className="action-icon-btn"
+              className="action-icon-btn primary-action"
               onClick={() => {
                 if (!activeChatId) {
                   handleNewChat().then(() => setIsUploadModalOpen(true));
@@ -250,97 +292,115 @@ export default function App() {
           </div>
         </header>
 
-        {/* Message Stream */}
-        <div className="messages-container">
-          <div className="messages-inner">
-            {messages.length === 0 ? (
-              <div className="welcome-screen">
-                <div className="welcome-icon">
-                  <BookOpen size={28} />
-                </div>
-                <h1 className="welcome-title">What would you like to know?</h1>
-                <p className="welcome-subtitle">
-                  Upload documents (**PDF, DOCX, TXT, Markdown**) to search with vector similarity,
-                  rerank with Jina AI, and get grounded answers from the ReAct agent.
-                </p>
-                <button
-                  className="action-icon-btn"
-                  style={{ padding: '9px 18px', fontSize: '13.5px' }}
-                  onClick={() => setIsUploadModalOpen(true)}
-                >
-                  <Upload size={15} />
-                  <span>Attach Documents to this Chat</span>
-                </button>
-              </div>
-            ) : (
-              messages.map((msg, idx) => (
-                <div key={idx} className={`message-row ${msg.role}`}>
-                  {msg.role === 'user' ? (
-                    <div className="message-bubble-user">{msg.content}</div>
-                  ) : (
-                    <div className="message-bubble-assistant">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                        {msg.content}
-                      </ReactMarkdown>
-                      {msg.sources && msg.sources.length > 0 && (
-                        <Citations sources={msg.sources} />
+        {/* Tab Content: Documents View vs Message Stream */}
+        {activeTab === 'documents' ? (
+          <ChatDocumentsTab
+            chatId={activeChatId}
+            userId={user?.user_id}
+            onUploadClick={() => setIsUploadModalOpen(true)}
+            onDocumentChange={(count) => setDocCount(count)}
+          />
+        ) : (
+          <>
+            {/* Message Stream */}
+            <div className="messages-container">
+              <div className="messages-inner">
+                {messages.length === 0 ? (
+                  <div className="welcome-screen">
+                    <div className="welcome-icon">
+                      <BookOpen size={28} />
+                    </div>
+                    <h1 className="welcome-title">What would you like to know?</h1>
+                    <p className="welcome-subtitle">
+                      Upload documents (**PDF, DOCX, TXT, Markdown**) to search with vector similarity,
+                      rerank with Jina AI, and get grounded answers from the ReAct agent.
+                    </p>
+                    <button
+                      className="action-icon-btn primary-action"
+                      style={{ padding: '9px 18px', fontSize: '13.5px' }}
+                      onClick={() => setIsUploadModalOpen(true)}
+                    >
+                      <Upload size={15} />
+                      <span>Attach Documents to this Chat</span>
+                    </button>
+                  </div>
+                ) : (
+                  messages.map((msg, idx) => (
+                    <div key={idx} className={`message-row ${msg.role}`}>
+                      {msg.role === 'user' ? (
+                        <div className="message-bubble-user">{msg.content}</div>
+                      ) : (
+                        <div className="message-bubble-assistant">
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                            {msg.content}
+                          </ReactMarkdown>
+                          {msg.sources && msg.sources.length > 0 && (
+                            <Citations sources={msg.sources} />
+                          )}
+                        </div>
                       )}
                     </div>
-                  )}
-                </div>
-              ))
-            )}
+                  ))
+                )}
 
-            {/* Loading Indicator */}
-            {isLoadingAnswer && (
-              <div className="message-row assistant">
-                <div className="message-bubble-assistant" style={{ display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-muted)' }}>
-                  <Loader2 size={18} className="animate-spin" />
-                  <span style={{ fontSize: '14px' }}>Thinking and searching documents...</span>
-                </div>
+                {/* Loading Indicator */}
+                {isLoadingAnswer && (
+                  <div className="message-row assistant">
+                    <div className="message-bubble-assistant" style={{ display: 'flex', alignItems: 'center', gap: '12px', color: 'var(--text-secondary)' }}>
+                      <Loader2 size={18} className="animate-spin text-accent" />
+                      <span className="animate-pulse" style={{ fontSize: '14px', fontWeight: 500 }}>
+                        Searching documents & reasoning with Groq ReAct agent...
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                <div ref={messagesEndRef} />
               </div>
-            )}
+            </div>
 
-            <div ref={messagesEndRef} />
-          </div>
-        </div>
+            {/* 3. Floating Bottom Input Dock */}
+            <div className="input-dock">
+              <form className="input-container" onSubmit={handleSendMessage}>
+                <button
+                  type="button"
+                  className="attach-btn"
+                  title="Upload documents"
+                  onClick={() => setIsUploadModalOpen(true)}
+                >
+                  <Paperclip size={18} />
+                </button>
 
-        {/* 3. Floating Bottom Input Dock */}
-        <div className="input-dock">
-          <form className="input-container" onSubmit={handleSendMessage}>
-            <button
-              type="button"
-              className="attach-btn"
-              title="Upload documents"
-              onClick={() => setIsUploadModalOpen(true)}
-            >
-              <Paperclip size={18} />
-            </button>
+                <textarea
+                  ref={textareaRef}
+                  rows={1}
+                  className="prompt-textarea"
+                  placeholder="Ask anything about your documents..."
+                  value={inputPrompt}
+                  onChange={handleInputResize}
+                  onKeyDown={handleKeyDown}
+                  disabled={isLoadingAnswer}
+                />
 
-            <textarea
-              ref={textareaRef}
-              rows={1}
-              className="prompt-textarea"
-              placeholder="Ask anything about your documents..."
-              value={inputPrompt}
-              onChange={handleInputResize}
-              onKeyDown={handleKeyDown}
-              disabled={isLoadingAnswer}
-            />
-
-            <button
-              type="submit"
-              className="send-btn"
-              disabled={!inputPrompt.trim() || isLoadingAnswer}
-              title="Send message"
-            >
-              <ArrowUp size={16} />
-            </button>
-          </form>
-          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '8px' }}>
-            QADoc uses hybrid vector search + cross-encoder reranking. Verify citations for accuracy.
-          </div>
-        </div>
+                <button
+                  type="submit"
+                  className="send-btn"
+                  disabled={!inputPrompt.trim() || isLoadingAnswer}
+                  title="Send message"
+                >
+                  {isLoadingAnswer ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <ArrowUp size={16} />
+                  )}
+                </button>
+              </form>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '8px' }}>
+                QADoc uses hybrid vector search + cross-encoder reranking. Verify citations for accuracy.
+              </div>
+            </div>
+          </>
+        )}
       </main>
 
       {/* 4. Document Ingestion Modal */}
@@ -350,9 +410,13 @@ export default function App() {
         isOpen={isUploadModalOpen}
         onClose={() => setIsUploadModalOpen(false)}
         onUploadSuccess={() => {
-          if (activeChatId) loadMessages(activeChatId);
+          if (activeChatId) {
+            loadMessages(activeChatId);
+            loadDocCount(activeChatId);
+          }
         }}
       />
+
     </div>
   );
 }

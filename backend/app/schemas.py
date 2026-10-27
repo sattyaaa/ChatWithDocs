@@ -60,8 +60,22 @@ class AskQuestionResponse(BaseModel):
     chat_title: Optional[str] = None
 
 
-# --- Document Upload Schemas ---
+# --- Document Upload & Management Schemas ---
 class IngestionResponse(BaseModel):
     filename: str
     chunks_ingested: int
     message: str
+
+
+class DocumentItem(BaseModel):
+    filename: str
+    chunks_count: int
+    chat_id: str
+    user_id: str
+
+
+class DeleteDocumentResponse(BaseModel):
+    filename: str
+    deleted_chunks: int
+    message: str
+

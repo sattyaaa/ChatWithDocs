@@ -115,11 +115,13 @@ export default function FileUploadModal({ chatId, userId, isOpen, onClose, onUpl
           <button
             onClick={handleUpload}
             className="auth-btn-primary"
-            style={{ width: 'auto', padding: '8px 18px', marginTop: 0 }}
+            style={{ width: 'auto', padding: '8px 18px', marginTop: 0, display: 'flex', alignItems: 'center', gap: '8px' }}
             disabled={isUploading || selectedFiles.length === 0}
           >
-            {isUploading ? 'Indexing...' : 'Process & Ingest'}
+            {isUploading && <Loader2 size={15} className="animate-spin" />}
+            <span>{isUploading ? 'Indexing Chunks...' : 'Process & Ingest'}</span>
           </button>
+
         </div>
       </div>
     </div>

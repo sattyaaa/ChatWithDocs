@@ -1,5 +1,5 @@
 import React from 'react';
-import { Plus, MessageSquare, Trash2, LogOut, User } from 'lucide-react';
+import { Plus, MessageSquare, Trash2, LogOut, User, BookOpen } from 'lucide-react';
 
 export default function Sidebar({
   chats,
@@ -12,6 +12,17 @@ export default function Sidebar({
 }) {
   return (
     <aside className="sidebar">
+      {/* 1. Application Brand Header */}
+      <div className="brand-header">
+        <div className="brand-logo-icon">
+          <BookOpen size={18} />
+        </div>
+        <div className="brand-info">
+          <span className="brand-title">QADoc</span>
+          <span className="brand-tagline">Document Intelligence</span>
+        </div>
+      </div>
+
       <div className="sidebar-header">
         <button className="new-chat-btn" onClick={onNewChat}>
           <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -21,6 +32,7 @@ export default function Sidebar({
           <Plus size={16} />
         </button>
       </div>
+
 
       <div className="chats-list">
         <div className="chats-section-title">Your Conversations</div>

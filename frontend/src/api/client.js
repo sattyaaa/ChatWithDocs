@@ -98,3 +98,27 @@ export async function uploadDocuments(chatId, userId, files) {
   }
   return res.json();
 }
+
+export async function fetchChatDocuments(chatId, userId) {
+  const res = await fetch(`${BASE_URL}/documents/${chatId}?user_id=${encodeURIComponent(userId)}`);
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to fetch chat documents');
+  }
+  return res.json();
+}
+
+export async function deleteDocument(chatId, filename, userId) {
+  const res = await fetch(
+    `${BASE_URL}/documents/${chatId}/${encodeURIComponent(filename)}?user_id=${encodeURIComponent(userId)}`,
+    {
+      method: 'DELETE',
+    }
+  );
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to delete document');
+  }
+  return res.json();
+}
+

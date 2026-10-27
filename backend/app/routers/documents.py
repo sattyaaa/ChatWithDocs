@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import List
 from fastapi import APIRouter, HTTPException, UploadFile, File, Query, status
 
-from app.schemas import IngestionResponse
+from app.schemas import IngestionResponse, DocumentItem, DeleteDocumentResponse
 from qadoc.config import settings
 from qadoc.rag.ingestion import ingest_documents
 
@@ -81,3 +81,97 @@ async def upload_documents(
             )
 
     return results
+
+
+@router.get("/{chat_id}", response_model=List[DocumentItem])
+async def get_chat_documents(
+    chat_id: str,
+    user_id: str = Query(..., description="The tenant/user ID"),
+):
+    """
+    Retrieve the list of distinct ingested documents for a chat session.
+    Falls back to user-level documents if none are specifically mapped to chat_id.
+    """
+    from qadoc.database.connection import documents_collection
+
+    # 1. First check documents specifically mapped to this chat
+    pipeline = [
+        {"$match": {"user_id": user_id, "chat_id": chat_id}},
+        {"$group": {"_id": "$filename", "chunks_count": {"$sum": 1}}},
+        {"$sort": {"_id": 1}},
+    ]
+    docs = list(documents_collection.aggregate(pipeline))
+
+    # 2. If no docs directly in this chat, check user's overall uploaded docs
+    if not docs:
+        pipeline_user = [
+            {"$match": {"user_id": user_id}},
+            {"$group": {"_id": "$filename", "chunks_count": {"$sum": 1}}},
+            {"$sort": {"_id": 1}},
+        ]
+        docs = list(documents_collection.aggregate(pipeline_user))
+
+    items = [
+        DocumentItem(
+            filename=d["_id"],
+            chunks_count=d["chunks_count"],
+            chat_id=chat_id,
+            user_id=user_id,
+        )
+        for d in docs
+        if d.get("_id")
+    ]
+    return items
+
+
+@router.delete("/{chat_id}/{filename}", response_model=DeleteDocumentResponse)
+async def delete_chat_document(
+    chat_id: str,
+    filename: str,
+    user_id: str = Query(..., description="The tenant/user ID"),
+):
+    """
+    Delete all vector chunks of a specific ingested document for this chat (and user).
+    """
+    from qadoc.database.connection import documents_collection
+
+    # Delete chunks for this chat_id first
+    filter_query = {
+        "user_id": user_id,
+        "chat_id": chat_id,
+        "filename": filename,
+    }
+    result = documents_collection.delete_many(filter_query)
+
+    deleted_count = result.deleted_count
+
+    # If 0 deleted with chat_id filter, delete user-level chunks with this filename
+    if deleted_count == 0:
+        result_user = documents_collection.delete_many({
+            "user_id": user_id,
+            "filename": filename,
+        })
+        deleted_count = result_user.deleted_count
+
+    if deleted_count == 0:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Document '{filename}' not found for deletion.",
+        )
+
+    # Optional: Delete file on disk if no other chunks reference it
+    upload_dir = Path(settings.upload_dir)
+    file_path = upload_dir / filename
+    try:
+        remaining = documents_collection.count_documents({"filename": filename})
+        if remaining == 0 and file_path.exists():
+            file_path.unlink()
+    except Exception:
+        pass
+
+    return DeleteDocumentResponse(
+        filename=filename,
+        deleted_chunks=deleted_count,
+        message=f"Successfully deleted '{filename}' ({deleted_count} chunks removed).",
+    )
+
