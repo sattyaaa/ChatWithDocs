@@ -25,8 +25,13 @@ from qadoc.rag.retrieval import (
     retrieve_documents,
 )
 
+from qadoc.rag.tools import (
+    retrieve_document_context,
+)
+
 from qadoc.rag.graph import (
     ask_question,
+    agent_executor,
 )
 
 __all__ = [
@@ -42,5 +47,7 @@ __all__ = [
     "retrieve_candidates",
     "rerank_documents",
     "retrieve_documents",
+    "retrieve_document_context",
+    "agent_executor",
     "ask_question",
 ]

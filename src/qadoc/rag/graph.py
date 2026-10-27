@@ -1,174 +1,40 @@
 """
-LangGraph state graph workflow for Document QA.
+LangGraph ReAct Agent workflow for Document QA.
 
-Workflow Nodes (Each independently traced with latency, inputs, and outputs):
-1. load_history: Retrieves recent chat conversation context from MongoDB.
-2. rephrase_query: Reformulates conversational queries into standalone database search queries (Groq 20B).
-3. retrieve_candidates: Executes similarity search on MongoDB Atlas Vector Search (Stage 1).
-4. rerank_documents: Reranks candidate chunks with cross-attention scoring using Jina Reranker v2 (Stage 2).
-5. generate_answer: Generates grounded response using Groq 120B (openai/gpt-oss-120b).
+ReAct Agent Architecture:
+- Uses Groq's high-speed reasoning model (openai/gpt-oss-120b) with native tool calling.
+- Equipped with `retrieve_document_context` tool (Stage 1 Atlas Vector Search + Stage 2 Jina Reranker v2).
+- Autonomously formulates search queries based on conversational context (Auto-Rephrase).
+- Skips retrieval on chit-chat or direct conversational questions to save latency and API cost.
+- Sliding-window context pruning retains recent chat turns without bloating context windows.
+- Granular LangSmith tracing with per-step latency telemetry.
 Framework-agnostic: Pure Python, zero UI dependencies.
 """
 
-from typing import TypedDict, List
 import logging
+from typing import List
 from langchain_core.documents import Document
-from langgraph.graph import StateGraph, START, END
+from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
+from langgraph.prebuilt import create_react_agent
 from langsmith import traceable
 
 from qadoc.config import settings
-from qadoc.rag.config import llm, rephrase_llm
-from qadoc.rag.retrieval import retrieve_candidates, rerank_documents
-from qadoc.rag.prompts import CONDENSE_QUESTION_PROMPT, SYSTEM_PROMPT
+from qadoc.rag.config import llm
+from qadoc.rag.tools import retrieve_document_context
+from qadoc.rag.prompts import REACT_AGENT_SYSTEM_PROMPT
 from qadoc.database.connection import get_recent_chat_messages
 
 logger = logging.getLogger(__name__)
 
-
-class RAGState(TypedDict):
-    query: str
-    chat_id: str
-    tenant: str
-    document_ids: List[str] | None
-
-    chat_history_rephrase: str
-    chat_history_qa: str
-    rephrased_query: str
-    raw_documents: List[Document]
-    documents: List[Document]
-    answer: str
+# Compile ReAct Agent with the two-stage retrieval tool
+agent_executor = create_react_agent(
+    model=llm,
+    tools=[retrieve_document_context],
+    prompt=REACT_AGENT_SYSTEM_PROMPT,
+)
 
 
-def load_history_node(state: RAGState) -> dict:
-    """
-    Node 1: Pull recent conversation history from MongoDB.
-    """
-    messages = get_recent_chat_messages(state["chat_id"], limit=settings.history_fetch_limit)
-    history_messages = [msg for msg in messages if msg.get("content") != state["query"]]
-
-    recent_rephrase = history_messages[-settings.history_rephrase_limit:]
-    recent_qa = history_messages[-settings.history_qa_limit:]
-
-    chat_history_rephrase = ""
-    for msg in recent_rephrase:
-        role = "User" if msg.get("role") == "user" else "Assistant"
-        chat_history_rephrase += f"{role}: {msg.get('content', '')}\n"
-
-    chat_history_qa = ""
-    for msg in recent_qa:
-        role = "User" if msg.get("role") == "user" else "Assistant"
-        chat_history_qa += f"{role}: {msg.get('content', '')}\n"
-
-    return {
-        "chat_history_rephrase": chat_history_rephrase,
-        "chat_history_qa": chat_history_qa,
-    }
-
-
-def rephrase_query_node(state: RAGState) -> dict:
-    """
-    Node 2: Condense conversational query into a standalone search query using Groq 20B.
-    """
-    chat_history = state["chat_history_rephrase"]
-    query = state["query"]
-
-    # First turn in conversation: keep query as-is to save latency and tokens
-    if not chat_history.strip():
-        return {"rephrased_query": query}
-
-    try:
-        rephrase_prompt = CONDENSE_QUESTION_PROMPT.format(
-            chat_history=chat_history,
-            question=query,
-        )
-        response = rephrase_llm.invoke(rephrase_prompt)
-        rephrased = response.content.strip() if hasattr(response, "content") else str(response).strip()
-
-        if rephrased:
-            logger.info(f"Rephrased query: '{query}' -> '{rephrased}'")
-            return {"rephrased_query": rephrased}
-
-    except Exception as e:
-        logger.error(f"Failed to rephrase query: {e}")
-
-    return {"rephrased_query": query}
-
-
-def retrieve_candidates_node(state: RAGState) -> dict:
-    """
-    Node 3: Stage 1 - Retrieve raw candidate chunks from MongoDB Atlas Vector Search.
-    """
-    candidates = retrieve_candidates(
-        query=state["rephrased_query"],
-        chat_id=state["chat_id"],
-        tenant=state["tenant"],
-        document_ids=state["document_ids"],
-        fetch_k=settings.fetch_k,
-    )
-    return {"raw_documents": candidates}
-
-
-def rerank_documents_node(state: RAGState) -> dict:
-    """
-    Node 4: Stage 2 - Rerank candidate chunks with Jina AI cross-encoder reranker.
-    """
-    candidates = state.get("raw_documents", [])
-    if not candidates:
-        return {"documents": []}
-
-    reranked = rerank_documents(
-        query=state["rephrased_query"],
-        documents=candidates,
-        top_n=settings.rerank_top_n,
-    )
-    return {"documents": reranked}
-
-
-def _format_context(documents: List[Document]) -> str:
-    return "\n\n".join(document.page_content for document in documents)
-
-
-def generate_answer_node(state: RAGState) -> dict:
-    """
-    Node 5: Grounded QA generation using Groq 120B (openai/gpt-oss-120b).
-    """
-    formatted_context = _format_context(state["documents"])
-    history = state["chat_history_qa"]
-
-    prompt = SYSTEM_PROMPT.format(
-        context=formatted_context if formatted_context.strip() else "No documents matched the query.",
-        chat_history=history if history.strip() else "No previous messages.",
-    )
-
-    response = llm.invoke([
-        ("system", prompt),
-        ("human", state["query"]),
-    ])
-
-    ans = response.content.strip() if hasattr(response, "content") else str(response).strip()
-    return {"answer": ans}
-
-
-# Compile workflow graph with distinct nodes for complete observability
-workflow = StateGraph(RAGState)
-
-workflow.add_node("load_history", load_history_node)
-workflow.add_node("rephrase_query", rephrase_query_node)
-workflow.add_node("retrieve_candidates", retrieve_candidates_node)
-workflow.add_node("rerank_documents", rerank_documents_node)
-workflow.add_node("generate_answer", generate_answer_node)
-
-workflow.add_edge(START, "load_history")
-workflow.add_edge("load_history", "rephrase_query")
-workflow.add_edge("rephrase_query", "retrieve_candidates")
-workflow.add_edge("retrieve_candidates", "rerank_documents")
-workflow.add_edge("rerank_documents", "generate_answer")
-workflow.add_edge("generate_answer", END)
-
-app = workflow.compile()
-
-
-@traceable(name="Document QA Turn", run_type="chain")
+@traceable(name="Document QA ReAct Turn", run_type="chain")
 def ask_question(
     query: str,
     chat_id: str,
@@ -176,7 +42,7 @@ def ask_question(
     document_ids: list[str] | None = None,
 ) -> dict:
     """
-    Executes the compiled RAG workflow and returns the grounded answer and citations.
+    Executes the Document QA ReAct Agent and returns the grounded answer and citations.
     Traced to LangSmith with session grouping and per-node latency telemetry.
 
     Args:
@@ -188,39 +54,93 @@ def ask_question(
     Returns:
         dict with keys:
             - 'answer' (str): Generated answer text.
-            - 'sources' (list[Document]): List of retrieved LangChain documents.
+            - 'sources' (list[Document]): List of retrieved LangChain documents with relevance scores.
     """
     try:
-        initial_state = {
-            "query": query,
-            "chat_id": chat_id,
-            "tenant": tenant,
-            "document_ids": document_ids,
-            "chat_history_rephrase": "",
-            "chat_history_qa": "",
-            "rephrased_query": "",
-            "raw_documents": [],
-            "documents": [],
-            "answer": "",
-        }
+        # 1. Fetch and prune conversation history from MongoDB
+        raw_history = get_recent_chat_messages(
+            chat_id=chat_id,
+            limit=settings.history_fetch_limit,
+        )
 
+        # Exclude any entry that matches the current query if it was already saved
+        history_messages = [msg for msg in raw_history if msg.get("content") != query]
+
+        # Apply context pruning to the configured QA limit
+        pruned_history = history_messages[-settings.history_qa_limit:]
+
+        formatted_messages = []
+        for msg in pruned_history:
+            role = msg.get("role")
+            content = msg.get("content", "")
+            if role == "user":
+                formatted_messages.append(HumanMessage(content=content))
+            elif role == "assistant":
+                formatted_messages.append(AIMessage(content=content))
+
+        # Append current user prompt
+        formatted_messages.append(HumanMessage(content=query))
+
+        # 2. Configure runtime parameters and tracing metadata
         config = {
+            "configurable": {
+                "chat_id": chat_id,
+                "tenant": tenant,
+                "document_ids": document_ids,
+            },
             "metadata": {
                 "session_id": chat_id,
                 "user_id": tenant,
                 "chat_id": chat_id,
             },
-            "tags": ["rag", "chat_turn", "qadoc"],
-            "run_name": f"Chat Turn ({chat_id[:8]})",
+            "tags": ["rag", "react_agent", "qadoc"],
+            "run_name": f"ReAct Turn ({chat_id[:8]})",
         }
 
-        result = app.invoke(initial_state, config=config)
+        logger.info(
+            f"Invoking ReAct Agent for chat '{chat_id}' with {len(formatted_messages)} messages in context"
+        )
+
+        # 3. Invoke ReAct Agent
+        result = agent_executor.invoke({"messages": formatted_messages}, config=config)
+        result_messages = result.get("messages", [])
+
+        # 4. Extract final model answer
+        last_message = result_messages[-1] if result_messages else None
+        if last_message and hasattr(last_message, "content"):
+            answer = str(last_message.content).strip()
+        else:
+            answer = str(last_message or "I couldn't process your question.").strip()
+
+        # 5. Extract retrieved document artifacts from ToolMessages
+        sources: list[Document] = []
+        seen_keys: set[str] = set()
+
+        for msg in result_messages:
+            if isinstance(msg, ToolMessage) and getattr(msg, "artifact", None):
+                artifacts = msg.artifact
+                if isinstance(artifacts, list):
+                    for doc in artifacts:
+                        if isinstance(doc, Document):
+                            # Unique key per chunk to prevent duplicates
+                            key = (
+                                doc.metadata.get("_id")
+                                or f"{doc.metadata.get('document_id')}_{doc.metadata.get('chunk_id')}"
+                                or doc.page_content[:60]
+                            )
+                            if key not in seen_keys:
+                                seen_keys.add(key)
+                                sources.append(doc)
+
+        logger.info(
+            f"ReAct Turn completed for chat '{chat_id}'. Citations extracted: {len(sources)}"
+        )
 
         return {
-            "answer": result["answer"],
-            "sources": result["documents"],
+            "answer": answer,
+            "sources": sources,
         }
 
     except Exception as exc:
-        logger.exception("Failed to execute RAG workflow.")
+        logger.exception("Failed to execute ReAct agent.")
         raise RuntimeError(f"Failed to generate answer: {exc}") from exc
