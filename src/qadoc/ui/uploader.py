@@ -1,14 +1,16 @@
 import streamlit as st
 from pathlib import Path
 
-from database.database import create_chat, update_chat_title, delete_chat
-from rag.ingestion import ingest_documents
-from rag.graph import ask_question
+from qadoc.config import settings
+from qadoc.database.connection import create_chat, update_chat_title, delete_chat
+from qadoc.rag.ingestion import ingest_documents
+from qadoc.rag.graph import ask_question
 
-UPLOAD_DIR = Path("data/uploads")
+UPLOAD_DIR = settings.upload_dir
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-def render_document_uploader(key_suffix: str = ""):
+
+def render_document_uploader(key_suffix: str = "") -> None:
     st.subheader("📂 Upload documents")
 
     uploaded_files = st.file_uploader(
@@ -62,7 +64,7 @@ def render_document_uploader(key_suffix: str = ""):
                                 update_chat_title(st.session_state.chat_id, uploaded_files[0].name)
                         except Exception:
                             update_chat_title(st.session_state.chat_id, uploaded_files[0].name)
-                    
+
                     st.session_state.ingestion_success = success_msg
                     st.rerun()
                 else:

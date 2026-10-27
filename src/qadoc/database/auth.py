@@ -1,20 +1,18 @@
 """
-Authentication and user management utilities for the Document QA Assistant.
+Authentication and user management utilities for QADoc.
 Uses MongoDB for credential storage and standard hashlib for secure PBKDF2-SHA256 password hashing.
+Framework-agnostic: Pure Python, zero UI dependencies.
 """
 
 import hashlib
 import os
 import datetime
-from database.database import db
-
-users_collection = db.get_collection("users")
+from qadoc.database.connection import users_collection
 
 
 def hash_password(password: str) -> str:
     """
     Hash a password using PBKDF2 HMAC SHA-256 with a unique salt.
-    
     Format: salt_hex:hash_hex
     """
     salt = os.urandom(16)
@@ -35,7 +33,7 @@ def verify_password(stored_password: str, provided_password: str) -> bool:
         salt_hex, hash_hex = stored_password.split(":")
         salt = bytes.fromhex(salt_hex)
         expected_hash = bytes.fromhex(hash_hex)
-        
+
         pwd_hash = hashlib.pbkdf2_hmac(
             hash_name="sha256",
             password=provided_password.encode("utf-8"),
@@ -50,16 +48,16 @@ def verify_password(stored_password: str, provided_password: str) -> bool:
 def register_user(username: str, password: str) -> str:
     """
     Register a new user in the database.
-    
+
     Args:
-        username: Desired username (case-insensitive checks recommended)
+        username: Desired username (case-insensitive)
         password: Raw password string
-        
+
     Returns:
         The string representation of the unique MongoDB user _id.
-        
+
     Raises:
-        ValueError: If username is already taken.
+        ValueError: If username is empty, invalid, or already taken.
     """
     username_clean = username.strip().lower()
     if not username_clean:
@@ -67,7 +65,6 @@ def register_user(username: str, password: str) -> str:
     if not password:
         raise ValueError("Password cannot be empty.")
 
-    # Check if username already exists
     existing = users_collection.find_one({"username": username_clean})
     if existing:
         raise ValueError("Username already taken. Please choose another one.")
@@ -87,11 +84,11 @@ def register_user(username: str, password: str) -> str:
 def login_user(username: str, password: str) -> dict | None:
     """
     Authenticate a user.
-    
+
     Args:
         username: Registered username
         password: Raw password
-        
+
     Returns:
         A dictionary containing the authenticated user's details, or None if authentication fails.
     """
@@ -108,5 +105,8 @@ def login_user(username: str, password: str) -> dict | None:
             "user_id": str(user["_id"]),
             "username": user["username"],
         }
-    
+
     return None
+
+
+authenticate_user = login_user

@@ -1,65 +1,50 @@
 """
-Document ingestion pipeline
+Document ingestion pipeline for QADoc.
 
-Pipeline Steps: 
- - Upload Files
- - Load Documents
- - Split Documents
- - Add Metadata
- - Store in weaviate
-
- """
+Pipeline Steps:
+ 1. Load documents from disk (.pdf, .docx, .txt, .md)
+ 2. Split documents into character chunks
+ 3. Attach metadata (user_id/tenant, chat_id, document_id, filename, page)
+ 4. Store embedded chunks into MongoDB Atlas Vector Search
+ 5. Purge chunks on chat deletion
+Framework-agnostic: Pure Python, zero UI dependencies.
+"""
 
 from pathlib import Path
 from uuid import uuid4
 import logging
-logger = logging.getLogger(__name__)
 
 from langchain_core.documents import Document
-
-from rag.config import get_vector_store
-
 from langchain_community.document_loaders import (
     PyMuPDFLoader,
     Docx2txtLoader,
     TextLoader,
 )
-
-
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-from rag.config import (
+from qadoc.rag.config import (
     CHUNK_SIZE,
     CHUNK_OVERLAP,
+    get_vector_store,
 )
+from qadoc.database.connection import documents_collection
+
+logger = logging.getLogger(__name__)
 
 
 def _load_documents(file_path: Path) -> list[Document]:
-    """Loads a single document from disk
-    
+    """
+    Loads a single document from disk.
+
     Supported file formats:
         - PDF (.pdf)
         - Microsoft Word (.docx)
         - Plain text (.txt)
         - Markdown (.md)
-
-    Args:
-        file_path_str: Path of the document.
-
-    Returns:
-        A list of Langchain Document objects.
-
-    Raises:
-        FileNotFoundError:
-            If the specifies file does not exist.
-        
-        ValueError:
-            If the file extension is not supported.
     """
-
     if not file_path.exists():
         raise FileNotFoundError(f"File not found: {file_path}")
-    
+
     suffix = file_path.suffix.lower()
 
     if suffix == ".pdf":
@@ -70,25 +55,19 @@ def _load_documents(file_path: Path) -> list[Document]:
         loader = TextLoader(str(file_path), encoding="utf-8")
     else:
         raise ValueError(
-            f"Unsupported file type '{suffix}'.\nSupported types are: .pdf, .docx, .txt, .md"
+            f"Unsupported file type '{suffix}'. Supported types are: .pdf, .docx, .txt, .md"
         )
 
     return loader.load()
-    
 
 
-def _split_documents(documents: list[Document]) ->list[Document]:
-    """Splits documents into smaller chunks for efficient retrieval.
-
-    Args:
-        documents: List of Langchain Document objects to split.
-
-    Returns:
-        list[Document]: List of split document chunks.
+def _split_documents(documents: list[Document]) -> list[Document]:
+    """
+    Splits documents into smaller chunks for efficient retrieval.
     """
     if not documents:
-        raise ValueError("No documents were provides for splitting.")
-    
+        raise ValueError("No documents were provided for splitting.")
+
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=CHUNK_SIZE,
         chunk_overlap=CHUNK_OVERLAP,
@@ -99,15 +78,9 @@ def _split_documents(documents: list[Document]) ->list[Document]:
     return splitter.split_documents(documents)
 
 
-
-import re
-
-
-def _sanitize_metadata(metadata):
+def _sanitize_metadata(metadata: dict) -> dict:
     """
-    Sanitizes metadata dictionary for Weaviate compatibility.
-    - Only retains relevant metadata keys (like 'page') to prevent schema pollution
-      and database insertion failures on unexpected types (like invalid dates).
+    Sanitizes metadata dictionary to retain relevant fields.
     """
     clean_meta = {}
     if "page" in metadata:
@@ -121,26 +94,18 @@ def _sanitize_metadata(metadata):
 def _add_metadata(
     chunks: list[Document],
     chat_id: str,
+    tenant: str,
     document_id: str,
     filename: str,
 ) -> list[Document]:
     """
-    Attach metadata to every document chunk.
-
-    Args:
-        chunks: List of chunked Document objects.
-        chat_id: Unique identifier of the current chat.
-        document_id: Unique identifier of the uploaded document.
-        filename: Original document filename
-
-    Returns:
-        The updated list of Document chunks.
+    Attach user, chat, document, and chunk metadata to each document chunk.
     """
-
     for chunk_id, chunk in enumerate(chunks):
         cleaned_meta = _sanitize_metadata(chunk.metadata)
         cleaned_meta.update(
             {
+                "user_id": tenant,
                 "chat_id": chat_id,
                 "document_id": document_id,
                 "filename": filename,
@@ -153,22 +118,18 @@ def _add_metadata(
     return chunks
 
 
-
-
-def ingest_documents(file_paths: list[Path], chat_id: str, tenant: str) ->int:
+def ingest_documents(file_paths: list[Path], chat_id: str, tenant: str) -> int:
     """
-    Ingest one or more documents into the Weaviate vector store.
-
+    Ingest one or more documents into the MongoDB Atlas vector store.
 
     Args:
         file_paths: Paths to the documents to be ingested.
         chat_id: Unique identifier for the current chat session.
-        tenant: Unique identifier of the tenant (user_id).
+        tenant: Unique identifier of the user (user_id).
 
     Returns:
         The total number of document chunks successfully stored.
     """
-
     vector_store = get_vector_store()
     total_chunks = 0
 
@@ -182,22 +143,23 @@ def ingest_documents(file_paths: list[Path], chat_id: str, tenant: str) ->int:
             chunks_with_meta = _add_metadata(
                 chunks=chunks,
                 chat_id=chat_id,
+                tenant=tenant,
                 document_id=document_id,
                 filename=file_path.name,
             )
-            _ = vector_store.add_documents(chunks_with_meta, tenant=tenant)
+
+            # Insert documents and auto-compute embeddings via Voyage AI
+            vector_store.add_documents(chunks_with_meta)
             total_chunks += len(chunks_with_meta)
 
             logger.info(
-                "Succesfully ingested '%s' ('%d chunks')",
+                "Successfully ingested '%s' (%d chunks) into MongoDB Atlas",
                 file_path.name,
                 len(chunks_with_meta),
             )
 
         except Exception as e:
-            logger.error(
-                f"Failed to ingest '{file_path.name}': {e}"
-            )
+            logger.error(f"Failed to ingest '{file_path.name}': {e}", exc_info=True)
             continue
 
     return total_chunks
@@ -205,20 +167,17 @@ def ingest_documents(file_paths: list[Path], chat_id: str, tenant: str) ->int:
 
 def delete_chat_embeddings(chat_id: str, tenant: str) -> None:
     """
-    Delete all vector embeddings associated with a specific chat_id under a tenant.
+    Delete all vector embeddings associated with a specific chat_id under a user.
     """
-    from weaviate.classes.query import Filter
-    from rag.config import get_client, COLLECTION_NAME
-
     try:
-        client = get_client()
-        collection = client.collections.get(COLLECTION_NAME).with_tenant(tenant)
-        response = collection.data.delete_many(
-            where=Filter.by_property("chat_id").equal(chat_id)
-        )
+        result = documents_collection.delete_many({
+            "user_id": tenant,
+            "chat_id": chat_id,
+        })
         logger.info(
-            f"Deleted embeddings for chat_id '{chat_id}' under tenant '{tenant}': "
-            f"{response.successful} successful, {response.failed} failed."
+            f"Deleted {result.deleted_count} vector documents for chat '{chat_id}' under user '{tenant}'"
         )
     except Exception as e:
-        logger.error(f"Failed to delete embeddings for chat_id '{chat_id}' under tenant '{tenant}': {e}")
+        logger.error(
+            f"Failed to delete embeddings for chat_id '{chat_id}' under user '{tenant}': {e}"
+        )

@@ -1,10 +1,11 @@
 import streamlit as st
-from database.auth import login_user, register_user
+from qadoc.database.auth import login_user, register_user
+
 
 def render_auth_screen():
     st.title("📚 Document QA Assistant")
     tab1, tab2 = st.tabs(["🔑 Login", "👤 Sign Up"])
-    
+
     with tab1:
         with st.form("login_form"):
             username = st.text_input("Username").strip()
@@ -34,16 +35,7 @@ def render_auth_screen():
                     st.error("Passwords do not match.")
                 else:
                     try:
-                        user_id = register_user(new_username, new_password)
-                        # Pre-create Weaviate tenant
-                        try:
-                            from rag.config import get_client, COLLECTION_NAME
-                            c = get_client()
-                            collection = c.collections.get(COLLECTION_NAME)
-                            collection.tenants.create([user_id])
-                        except Exception:
-                            # Keep going even if Weaviate auto tenant creation is enabled or setup fails
-                            pass
+                        register_user(new_username, new_password)
                         st.success("Registration successful! Please log in on the Login tab.")
                     except ValueError as e:
                         st.error(str(e))

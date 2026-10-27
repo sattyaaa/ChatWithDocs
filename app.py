@@ -3,7 +3,7 @@ import tracemalloc
 import logging
 tracemalloc.start()
 
-from database.database import (
+from qadoc.database import (
     initialize_database,
     create_chat,
     get_all_chats,
@@ -12,11 +12,13 @@ from database.database import (
     update_chat_title,
 )
 
-from ui.auth import render_auth_screen
-from ui.sidebar import render_sidebar
-from ui.uploader import render_document_uploader
-from ui.components import render_sources_badges
-from rag.graph import ask_question
+from qadoc.ui import (
+    render_auth_screen,
+    render_sidebar,
+    render_document_uploader,
+    render_sources_badges,
+)
+from qadoc.rag import ask_question  # LangGraph RAG with granular step tracing
 
 # Page Configuration with modern Streamlit options
 st.set_page_config(

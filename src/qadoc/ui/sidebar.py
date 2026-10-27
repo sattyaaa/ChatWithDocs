@@ -1,8 +1,9 @@
 import streamlit as st
-from database.database import get_all_chats, delete_chat
-from rag.ingestion import delete_chat_embeddings
+from qadoc.database.connection import get_all_chats, delete_chat
+from qadoc.rag.ingestion import delete_chat_embeddings
 
-def render_sidebar():
+
+def render_sidebar() -> None:
     with st.sidebar:
         st.title("📚 Document QA")
         st.caption(f"Logged in as: **{st.session_state.username}**")
