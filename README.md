@@ -1,173 +1,151 @@
-# Document QA Assistant (RAG Pipeline)
+# QADoc — Intelligent Document QA Assistant
 
-A Streamlit web application to chat with your documents (PDF, Word, Text, Markdown) using an agentic RAG pipeline powered by Weaviate, MongoDB, and Groq.
+[![FastAPI](https://img.shields.io/badge/Backend-FastAPI_0.115-009688?logo=fastapi)](https://fastapi.tiangolo.com)
+[![React](https://img.shields.io/badge/Frontend-React_19_--_Vite-61DAFB?logo=react)](https://react.dev)
+[![Groq](https://img.shields.io/badge/LLM-Groq_GPT--OSS--120B-f55036)](https://groq.com)
+[![MongoDB](https://img.shields.io/badge/Vector_Store-MongoDB_Atlas-47A248?logo=mongodb)](https://www.mongodb.com/products/platform/atlas-vector-search)
+[![Jina AI](https://img.shields.io/badge/Reranker-Jina_AI_v2-000000)](https://jina.ai)
+
+**QADoc** is an enterprise-grade, agentic Document Question-Answering system. It combines a decoupled **FastAPI** backend running a **LangGraph ReAct Agent** with a **React + Vite** single-page application crafted with a light, distraction-free aesthetic inspired by Claude and ChatGPT.
 
 ---
 
-## System Architecture
-
-Two distinct pipelines operate in this system — one for **indexing documents** and one for **answering queries**. Both converge on the Vector Store.
+## 🏛️ System Architecture
 
 ```mermaid
-graph LR
-    %% ══════════════════════════════════════════
-    %%  FRONTEND
-    %% ══════════════════════════════════════════
-    FE["Frontend\nStreamlit"]
-
-    %% ══════════════════════════════════════════
-    %%  INDEXING PATH
-    %% ══════════════════════════════════════════
-    subgraph IDX["Indexing Pipeline"]
-        direction TB
-        A1(["Raw Document"])
-        A2["Parse & Chunk"]
-        A3["Embed\nbge-base-en-v1.5"]
-        A1 --> A2 --> A3
+graph TB
+    subgraph UI["Frontend (React + Vite - Port 5173)"]
+        CHAT["💬 Chat View\n(Markdown, Citations, Input Dock)"]
+        DOCS_TAB["📁 Documents Tab\n(Chunk counts & Deletion)"]
+        UPLOAD_MODAL["⬆️ Drag & Drop Uploader\n(Rotating Spinner)"]
     end
 
-    %% ══════════════════════════════════════════
-    %%  QUERY PATH
-    %% ══════════════════════════════════════════
-    subgraph QRY["Query Pipeline"]
-        direction TB
-        B1(["User Query"])
-        B2["1. History\nLoad context"]
-        B3["2. Rephrase\nStandalone query"]
-        B4["3. Retrieve\nTop-k similarity search"]
-        B5["4. Generate\nGround answer in context"]
-        B6(["Answer + Sources"])
-        B1 --> B2 --> B3 --> B4 --> B5 --> B6
+    subgraph API["FastAPI Backend (Port 8000)"]
+        AUTH_RTR["/api/auth\n(User Login & Registration)"]
+        CHAT_RTR["/api/chats\n(History & Auto-Title)"]
+        DOC_RTR["/api/documents\n(Upload & Vector Indexing)"]
     end
 
-    %% ══════════════════════════════════════════
-    %%  SHARED SERVICES
-    %% ══════════════════════════════════════════
-    VS[("Vector Store\nWeaviate Cloud")]
-    MEM[("Memory Store\nMongoDB Atlas")]
-    LLM["LLM\nGroq Cloud"]
+    subgraph Core["Agentic RAG Engine (src/qadoc)"]
+        REACT["LangGraph ReAct Agent\n(Groq openai/gpt-oss-120b)"]
+        VSEARCH["Stage 1: Vector Search\n(jina-embeddings-v3)"]
+        RERANK["Stage 2: Cross-Encoder\n(Jina Reranker v2)"]
+    end
 
-    %% ── frontend edges ──
-    FE -- "upload document" --> A1
-    FE -- "submit query" --> B1
-    B6 -- "render response" --> FE
-    FE <-. "auth / sessions" .-> MEM
+    subgraph DB["Storage"]
+        ATLAS_VEC[("MongoDB Atlas\nVector Search")]
+        ATLAS_DATA[("MongoDB Atlas\nChats, Messages & Users")]
+    end
 
-    %% ── cross-pipeline edges ──
-    A3 -. stores .-> VS
-    B4 <-. retrieves .-> VS
-    B2 <-. reads / writes .-> MEM
-    B3 <-. rephrase call .-> LLM
-    B5 <-. completion call .-> LLM
-
-    %% ══════════════════════════════════════════
-    %%  STYLES
-    %% ══════════════════════════════════════════
-    classDef pipeline  fill:#0f172a,stroke:#475569,color:#e2e8f0
-    classDef step      fill:#1e293b,stroke:#6366f1,color:#c7d2fe
-    classDef terminal  fill:#1e293b,stroke:#818cf8,color:#e0e7ff,rx:20
-    classDef store     fill:#1e293b,stroke:#10b981,color:#6ee7b7
-    classDef inference fill:#1e293b,stroke:#f59e0b,color:#fde68a
-    classDef frontend  fill:#1e293b,stroke:#38bdf8,color:#bae6fd
-
-    class IDX,QRY pipeline
-    class A2,A3,B2,B3,B4,B5 step
-    class A1,B1,B6 terminal
-    class VS,MEM store
-    class LLM inference
-    class FE frontend
+    UI -->|REST API| API
+    CHAT_RTR --> REACT
+    DOC_RTR -->|Ephemeral Ingestion| VSEARCH
+    REACT -->|retrieve_document_context| VSEARCH
+    VSEARCH -->|Top Candidates| RERANK
+    RERANK -->|Top-N Reranked| REACT
+    VSEARCH <--> ATLAS_VEC
+    API <--> ATLAS_DATA
 ```
 
 ---
 
-## Technology Stack & Models
+## 🌟 Key Highlights
 
-### Technology Stack
-- **Frontend / UI**: Streamlit (modular layout in `ui/`)
-- **Orchestration**: LangGraph (compiled state machine workflow)
-- **Vector Database**: Weaviate Cloud (with native Multi-Tenancy per user)
-- **NoSQL Database**: MongoDB Atlas (persisting chat sessions, history, and users)
-- **File Processing**: pypdf, python-docx
-
-### Models
-- **Embedding Model**: BAAI/bge-base-en-v1.5
-- **Query Rephraser LLM**: `llama-3.1-8b-instant` (via Groq, low-latency)
-- **QA Generator LLM**: `llama-3.3-70b-versatile` (via Groq)
+* **ReAct Agent Reasoning:** Uses Groq Cloud's `openai/gpt-oss-120b` reasoning model to autonomously formulate search queries, incorporate previous conversation context (auto-rephrasing), and synthesize strictly grounded answers.
+* **Two-Stage Retrieval:**
+  * **Stage 1 (Atlas Vector Search):** Dense vector similarity matching using `jina-embeddings-v3` (1024 dimensions).
+  * **Stage 2 (Jina AI Reranker v2):** Cross-encoder scoring (`jina-reranker-v2-base-multilingual`) to eliminate irrelevant chunks and order excerpts by precise semantic relevance.
+* **Ephemeral Ingestion:** Files uploaded (`.pdf`, `.docx`, `.txt`, `.md`) are parsed, split, embedded into MongoDB Atlas, and **immediately deleted from disk** to ensure privacy and zero storage bloat.
+* **Document Management Tab:** Each chat features a dedicated `Documents (N)` tab showing all ingested files, vector chunk counts, and one-click vector deletion.
+* **Interactive Citations:** Assistant answers cite sources with clickable badges showing document name, page, and match score (e.g. `85% match`), opening full excerpt preview modals.
+* **Strict Session Isolation:** Retrieval and document listings are strictly scoped per chat session — no document leaking across different chats.
 
 ---
 
-## Supported File Formats
-- PDF (.pdf)
-- Microsoft Word (.docx)
-- Plain Text (.txt)
-- Markdown (.md)
+## 📁 Repository Structure
 
----
-
-## Database Schema
-
-### MongoDB (NoSQL Document Database)
-Stored in a remote MongoDB Atlas cluster (`docqa_chat` database) with three collections:
-- **users**:
-  - `_id` (ObjectId, Primary Key): Unique identifier.
-  - `username` (String): Case-insensitive lowercase login username.
-  - `password_hash` (String): Hashed password using PBKDF2 HMAC SHA-256 (100k iterations).
-  - `created_at` (Date): Creation timestamp.
-- **chats**:
-  - `_id` / `chat_id` (String, Primary Key): Unique identifier (UUID) for the chat session.
-  - `user_id` (String): Owner user's ID string.
-  - `title` (String): Title of the chat session.
-  - `created_at` (Date): Creation timestamp.
-  - `updated_at` (Date): Last updated timestamp.
-- **messages**:
-  - `_id` (ObjectId, Primary Key): Unique identifier for the message.
-  - `chat_id` (String): ID of the parent chat session.
-  - `role` (String): Sender role (`user` or `assistant`).
-  - `content` (String): The message content.
-  - `sources` (Array, Optional): List of source dictionaries `[{"filename": "doc.pdf", "page": 1, "content": "chunk text"}]` for assistant responses.
-  - `created_at` (Date): Timestamp when the message was saved.
-
-### Weaviate (Vector Database)
-A collection named `Documents` stores the ingested document chunks:
-- **Multi-Tenancy**: Native Weaviate partitioning enabled (`use_multi_tenancy=True`). Shard routing uses the logged-in user's MongoDB `user_id` string as the `tenant` key.
-- **Properties**:
-  - `text` (TEXT): Raw text content of the chunk.
-  - `chat_id` (TEXT): ID of the chat session.
-  - `document_id` (TEXT): Unique identifier of the source file.
-  - `filename` (TEXT): Name of the source file.
-  - `page` (INT): Page number of the chunk (0-indexed, applicable for PDFs).
-  - `chunk_id` (TEXT): Segment sequence identifier.
-  - `source` (TEXT): Source reference path.
-
----
-
-## Quick Start
-
-### 1. Installation
-```bash
-# Clone the repository
-git clone https://github.com/sattyaaa/ChatWithDocs.git
-cd ChatWithDocs
-
-# Create and activate virtual environment
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-
-# Install requirements
-pip install -r requirements.txt
+```text
+QADoc/
+├── backend/
+│   ├── app/
+│   │   ├── main.py              <-- FastAPI application with CORS and lifespan
+│   │   ├── schemas.py           <-- Pydantic request/response models
+│   │   └── routers/
+│   │       ├── auth.py          <-- /api/auth (Login, Register)
+│   │       ├── chats.py         <-- /api/chats (Conversations, QA, Auto-title)
+│   │       └── documents.py     <-- /api/documents (Upload, List, Delete)
+│   ├── src/qadoc/
+│   │   ├── config.py            <-- Central Pydantic settings
+│   │   ├── database/            <-- MongoDB connection & session persistence
+│   │   └── rag/                 <-- ReAct agent, tools, prompts, & two-stage retrieval
+│   ├── pyproject.toml           <-- Backend dependencies
+│   ├── uv.lock
+│   └── README.md                <-- Backend documentation
+│
+├── frontend/
+│   ├── src/
+│   │   ├── App.jsx              <-- Main React application & tab state
+│   │   ├── index.css            <-- Claude / ChatGPT light theme styling & animations
+│   │   ├── api/client.js        <-- Fetch API client
+│   │   └── components/
+│   │       ├── Sidebar.jsx      <-- QADoc branding, chat list, & user badge
+│   │       ├── ChatDocumentsTab.jsx <-- Ingested files view & deletion
+│   │       ├── Citations.jsx    <-- Interactive citation pills & modal
+│   │       ├── FileUploadModal.jsx <-- Ingestion modal with rotating spinner
+│   │       └── AuthScreen.jsx   <-- User login / registration view
+│   ├── vite.config.js           <-- Vite dev server with proxy to :8000
+│   ├── package.json
+│   └── README.md                <-- Frontend documentation
+│
+└── README.md                    <-- Project overview
 ```
 
-### 2. Environment Configuration
-Create a `.env` file in the root directory:
+---
+
+## 🚀 Quick Start Guide
+
+### 1. Prerequisites
+- **Python 3.11+** with [`uv`](https://docs.astral.sh/uv/) installed.
+- **Node.js 18+** with `npm`.
+- A **MongoDB Atlas** cluster with an Atlas Vector Search index named `doc_index`.
+- API keys for **Groq Cloud** and **Jina AI**.
+
+---
+
+### 2. Configure Backend Environment
+Create `backend/.env`:
 ```env
-GROQ_API_KEY=your_groq_api_key_here
-WEAVIATE_URL=your_weaviate_cluster_url_here
-WEAVIATE_API_KEY=your_weaviate_api_key_here
-MONGODB_URI=your_mongodb_connection_string_here
+MONGODB_URI=mongodb+srv://<username>:<password>@cluster.mongodb.net/?retryWrites=true&w=majority
+MONGODB_DB_NAME=docqa_chat
+MONGODB_VECTOR_INDEX=doc_index
+
+GROQ_API_KEY=gsk_...
+GROQ_MODEL=openai/gpt-oss-120b
+
+JINA_API_KEY=jina_...
 ```
 
-### 3. Run the App
+---
+
+### 3. Start the Backend Server
 ```bash
-streamlit run app.py
+cd backend
+uv run uvicorn app.main:app --reload --port 8000
 ```
-Visit `http://localhost:8501` to start.
+*API docs:* `http://localhost:8000/docs`
+
+---
+
+### 4. Start the Frontend
+In a new terminal window:
+```bash
+cd frontend
+npm install
+npm run dev
+```
+*Web application:* `http://localhost:5173`
+
+---
+
+## 📄 License
+This project is licensed under the MIT License.

@@ -29,25 +29,18 @@ def _build_filter(
     document_ids: list[str] | None = None,
 ) -> dict:
     """
-    Builds a MongoDB Atlas Vector Search pre-filter expression.
-    Filters by user_id and chat_id if documents exist in this chat,
-    otherwise falls back to searching across all documents uploaded by this user.
+    Builds a MongoDB Atlas Vector Search pre-filter expression strictly scoped to the active chat.
     """
-    has_chat_docs = documents_collection.find_one({"user_id": tenant, "chat_id": chat_id})
-    if has_chat_docs:
-        filters: dict = {
-            "user_id": tenant,
-            "chat_id": chat_id,
-        }
-    else:
-        filters = {
-            "user_id": tenant,
-        }
+    filters: dict = {
+        "user_id": tenant,
+        "chat_id": chat_id,
+    }
 
     if document_ids:
         filters["document_id"] = {"$in": document_ids}
 
     return filters
+
 
 
 @traceable(name="MongoDB Atlas Vector Search", run_type="retriever")

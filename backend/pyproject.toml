@@ -5,8 +5,8 @@ description = "Modular Document QA Assistant with MongoDB Atlas Vector Search, J
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "streamlit>=1.40.0",
     "pymongo>=4.6.0",
+
     "langchain>=1.4.0",
     "langchain-core>=1.5.0",
     "langchain-community>=0.4.0",

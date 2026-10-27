@@ -1,173 +1,108 @@
-# Document QA Assistant (RAG Pipeline)
+# QADoc — FastAPI Backend & ReAct RAG Engine
 
-A Streamlit web application to chat with your documents (PDF, Word, Text, Markdown) using an agentic RAG pipeline powered by Weaviate, MongoDB, and Groq.
+High-performance REST API and Agentic RAG core for **QADoc**, powered by **FastAPI**, **LangGraph ReAct Agent**, **MongoDB Atlas Vector Search**, and **Jina AI Reranker v2**.
 
 ---
 
-## System Architecture
-
-Two distinct pipelines operate in this system — one for **indexing documents** and one for **answering queries**. Both converge on the Vector Store.
+## 🏗️ Architecture & Technology Stack
 
 ```mermaid
 graph LR
-    %% ══════════════════════════════════════════
-    %%  FRONTEND
-    %% ══════════════════════════════════════════
-    FE["Frontend\nStreamlit"]
-
-    %% ══════════════════════════════════════════
-    %%  INDEXING PATH
-    %% ══════════════════════════════════════════
-    subgraph IDX["Indexing Pipeline"]
-        direction TB
-        A1(["Raw Document"])
-        A2["Parse & Chunk"]
-        A3["Embed\nbge-base-en-v1.5"]
-        A1 --> A2 --> A3
+    subgraph Client
+        FE["React + Vite Frontend\n(Port 5173)"]
     end
 
-    %% ══════════════════════════════════════════
-    %%  QUERY PATH
-    %% ══════════════════════════════════════════
-    subgraph QRY["Query Pipeline"]
-        direction TB
-        B1(["User Query"])
-        B2["1. History\nLoad context"]
-        B3["2. Rephrase\nStandalone query"]
-        B4["3. Retrieve\nTop-k similarity search"]
-        B5["4. Generate\nGround answer in context"]
-        B6(["Answer + Sources"])
-        B1 --> B2 --> B3 --> B4 --> B5 --> B6
+    subgraph FastAPI["FastAPI Backend (Port 8000)"]
+        AUTH["/api/auth\n(PBKDF2 HMAC SHA-256)"]
+        CHATS["/api/chats\n(Session & QA)"]
+        DOCS["/api/documents\n(Upload & Vector Indexing)"]
     end
 
-    %% ══════════════════════════════════════════
-    %%  SHARED SERVICES
-    %% ══════════════════════════════════════════
-    VS[("Vector Store\nWeaviate Cloud")]
-    MEM[("Memory Store\nMongoDB Atlas")]
-    LLM["LLM\nGroq Cloud"]
+    subgraph RAG["Agentic RAG Core (src/qadoc)"]
+        AGENT["LangGraph ReAct Agent\n(Groq openai/gpt-oss-120b)"]
+        VSEARCH["Stage 1: Atlas Vector Search\n(jina-embeddings-v3)"]
+        RERANK["Stage 2: Cross-Encoder\n(Jina Reranker v2)"]
+    end
 
-    %% ── frontend edges ──
-    FE -- "upload document" --> A1
-    FE -- "submit query" --> B1
-    B6 -- "render response" --> FE
-    FE <-. "auth / sessions" .-> MEM
+    subgraph Storage["Cloud Storage"]
+        ATLAS[("MongoDB Atlas\n(Vector Store + Chats/Users)")]
+    end
 
-    %% ── cross-pipeline edges ──
-    A3 -. stores .-> VS
-    B4 <-. retrieves .-> VS
-    B2 <-. reads / writes .-> MEM
-    B3 <-. rephrase call .-> LLM
-    B5 <-. completion call .-> LLM
+    FE -->|REST API| AUTH
+    FE -->|REST API| CHATS
+    FE -->|REST API| DOCS
 
-    %% ══════════════════════════════════════════
-    %%  STYLES
-    %% ══════════════════════════════════════════
-    classDef pipeline  fill:#0f172a,stroke:#475569,color:#e2e8f0
-    classDef step      fill:#1e293b,stroke:#6366f1,color:#c7d2fe
-    classDef terminal  fill:#1e293b,stroke:#818cf8,color:#e0e7ff,rx:20
-    classDef store     fill:#1e293b,stroke:#10b981,color:#6ee7b7
-    classDef inference fill:#1e293b,stroke:#f59e0b,color:#fde68a
-    classDef frontend  fill:#1e293b,stroke:#38bdf8,color:#bae6fd
-
-    class IDX,QRY pipeline
-    class A2,A3,B2,B3,B4,B5 step
-    class A1,B1,B6 terminal
-    class VS,MEM store
-    class LLM inference
-    class FE frontend
+    CHATS --> AGENT
+    DOCS -->|Parse & Embed| VSEARCH
+    AGENT -->|Retrieve Tool| VSEARCH
+    VSEARCH -->|Top Candidates| RERANK
+    RERANK -->|Top-N Reranked| AGENT
+    VSEARCH <--> ATLAS
+    AUTH <--> ATLAS
+    CHATS <--> ATLAS
 ```
 
----
-
-## Technology Stack & Models
-
-### Technology Stack
-- **Frontend / UI**: Streamlit (modular layout in `ui/`)
-- **Orchestration**: LangGraph (compiled state machine workflow)
-- **Vector Database**: Weaviate Cloud (with native Multi-Tenancy per user)
-- **NoSQL Database**: MongoDB Atlas (persisting chat sessions, history, and users)
-- **File Processing**: pypdf, python-docx
-
-### Models
-- **Embedding Model**: BAAI/bge-base-en-v1.5
-- **Query Rephraser LLM**: `llama-3.1-8b-instant` (via Groq, low-latency)
-- **QA Generator LLM**: `llama-3.3-70b-versatile` (via Groq)
+### Key Technologies
+- **API Framework:** FastAPI 0.115+ (asynchronous REST endpoints, Pydantic v2 schemas).
+- **LLM Reasoning:** Groq Cloud running `openai/gpt-oss-120b` ReAct agent with tool calling.
+- **Embeddings:** Jina AI `jina-embeddings-v3` (1024-dimensional dense vectors).
+- **Vector Search:** MongoDB Atlas Vector Search (cosine similarity search with pre-filtering).
+- **Cross-Encoder Reranker:** Jina AI Reranker v2 (`jina-reranker-v2-base-multilingual`).
+- **Observability:** LangSmith end-to-end distributed tracing.
 
 ---
 
-## Supported File Formats
-- PDF (.pdf)
-- Microsoft Word (.docx)
-- Plain Text (.txt)
-- Markdown (.md)
+## ⚡ Ephemeral File Ingestion
+
+Uploaded documents (`.pdf`, `.docx`, `.txt`, `.md`) are:
+1. Written temporarily to memory/disk.
+2. Parsed and split into character chunks with overlap.
+3. Embedded via Jina AI and saved into MongoDB Atlas Vector Search.
+4. **Immediately deleted from disk** after successful ingestion to avoid lingering storage overhead.
 
 ---
 
-## Database Schema
+## 🔌 API Endpoints
 
-### MongoDB (NoSQL Document Database)
-Stored in a remote MongoDB Atlas cluster (`docqa_chat` database) with three collections:
-- **users**:
-  - `_id` (ObjectId, Primary Key): Unique identifier.
-  - `username` (String): Case-insensitive lowercase login username.
-  - `password_hash` (String): Hashed password using PBKDF2 HMAC SHA-256 (100k iterations).
-  - `created_at` (Date): Creation timestamp.
-- **chats**:
-  - `_id` / `chat_id` (String, Primary Key): Unique identifier (UUID) for the chat session.
-  - `user_id` (String): Owner user's ID string.
-  - `title` (String): Title of the chat session.
-  - `created_at` (Date): Creation timestamp.
-  - `updated_at` (Date): Last updated timestamp.
-- **messages**:
-  - `_id` (ObjectId, Primary Key): Unique identifier for the message.
-  - `chat_id` (String): ID of the parent chat session.
-  - `role` (String): Sender role (`user` or `assistant`).
-  - `content` (String): The message content.
-  - `sources` (Array, Optional): List of source dictionaries `[{"filename": "doc.pdf", "page": 1, "content": "chunk text"}]` for assistant responses.
-  - `created_at` (Date): Timestamp when the message was saved.
+### 1. Authentication (`/api/auth`)
+* `POST /api/auth/register`: Register new user account.
+* `POST /api/auth/login`: Authenticate and return user info.
 
-### Weaviate (Vector Database)
-A collection named `Documents` stores the ingested document chunks:
-- **Multi-Tenancy**: Native Weaviate partitioning enabled (`use_multi_tenancy=True`). Shard routing uses the logged-in user's MongoDB `user_id` string as the `tenant` key.
-- **Properties**:
-  - `text` (TEXT): Raw text content of the chunk.
-  - `chat_id` (TEXT): ID of the chat session.
-  - `document_id` (TEXT): Unique identifier of the source file.
-  - `filename` (TEXT): Name of the source file.
-  - `page` (INT): Page number of the chunk (0-indexed, applicable for PDFs).
-  - `chunk_id` (TEXT): Segment sequence identifier.
-  - `source` (TEXT): Source reference path.
+### 2. Chat Sessions (`/api/chats`)
+* `GET /api/chats?user_id={id}`: List all chats for a user.
+* `POST /api/chats?user_id={id}`: Create a new chat session.
+* `GET /api/chats/{chat_id}/messages`: Fetch chronological message history.
+* `POST /api/chats/{chat_id}/ask?user_id={id}`: Ask the ReAct agent; returns grounded answer, citations, and auto-generated topic title.
+* `DELETE /api/chats/{chat_id}?user_id={id}`: Delete a chat and all its associated messages.
+
+### 3. Document Management (`/api/documents`)
+* `POST /api/documents/upload/{chat_id}?user_id={id}`: Upload files and index into Atlas.
+* `GET /api/documents/{chat_id}?user_id={id}`: List all ingested documents and chunk counts for this chat.
+* `DELETE /api/documents/{chat_id}/{filename}?user_id={id}`: Delete document embeddings from Atlas for this chat.
 
 ---
 
-## Quick Start
+## 🚀 Setup & Execution
 
-### 1. Installation
-```bash
-# Clone the repository
-git clone https://github.com/sattyaaa/ChatWithDocs.git
-cd ChatWithDocs
+### Prerequisites
+* Python 3.11+
+* [`uv`](https://docs.astral.sh/uv/) package manager (recommended) or standard `pip`
 
-# Create and activate virtual environment
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-
-# Install requirements
-pip install -r requirements.txt
-```
-
-### 2. Environment Configuration
-Create a `.env` file in the root directory:
+### 1. Configure Environment Variables
+Create `.env` in `backend/`:
 ```env
-GROQ_API_KEY=your_groq_api_key_here
-WEAVIATE_URL=your_weaviate_cluster_url_here
-WEAVIATE_API_KEY=your_weaviate_api_key_here
-MONGODB_URI=your_mongodb_connection_string_here
+MONGODB_URI=mongodb+srv://<username>:<password>@cluster.mongodb.net/?retryWrites=true&w=majority
+MONGODB_DB_NAME=docqa_chat
+MONGODB_VECTOR_INDEX=doc_index
+GROQ_API_KEY=gsk_...
+GROQ_MODEL=openai/gpt-oss-120b
+JINA_API_KEY=jina_...
 ```
 
-### 3. Run the App
+### 2. Install Dependencies & Start Server
 ```bash
-streamlit run app.py
+cd backend
+uv run uvicorn app.main:app --reload --port 8000
 ```
-Visit `http://localhost:8501` to start.
+
+Interactive OpenAPI Swagger documentation will be available at `http://localhost:8000/docs`.

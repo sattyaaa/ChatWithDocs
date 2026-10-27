@@ -79,8 +79,16 @@ async def upload_documents(
                     message=f"Ingestion failed: {str(e)}",
                 )
             )
+        finally:
+            # Always delete the temporary file from disk after parsing and vector indexing
+            if file_path.exists():
+                try:
+                    file_path.unlink()
+                except Exception:
+                    pass
 
     return results
+
 
 
 @router.get("/{chat_id}", response_model=List[DocumentItem])
@@ -94,22 +102,13 @@ async def get_chat_documents(
     """
     from qadoc.database.connection import documents_collection
 
-    # 1. First check documents specifically mapped to this chat
+    # Query documents specifically mapped to this chat
     pipeline = [
         {"$match": {"user_id": user_id, "chat_id": chat_id}},
         {"$group": {"_id": "$filename", "chunks_count": {"$sum": 1}}},
         {"$sort": {"_id": 1}},
     ]
     docs = list(documents_collection.aggregate(pipeline))
-
-    # 2. If no docs directly in this chat, check user's overall uploaded docs
-    if not docs:
-        pipeline_user = [
-            {"$match": {"user_id": user_id}},
-            {"$group": {"_id": "$filename", "chunks_count": {"$sum": 1}}},
-            {"$sort": {"_id": 1}},
-        ]
-        docs = list(documents_collection.aggregate(pipeline_user))
 
     items = [
         DocumentItem(
@@ -122,6 +121,7 @@ async def get_chat_documents(
         if d.get("_id")
     ]
     return items
+
 
 
 @router.delete("/{chat_id}/{filename}", response_model=DeleteDocumentResponse)

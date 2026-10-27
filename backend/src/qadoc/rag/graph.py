@@ -33,15 +33,14 @@ agent_executor = create_react_agent(
 
 
 def get_chat_documents(chat_id: str, tenant: str) -> list[str]:
-    """Retrieve distinct document filenames accessible in this chat session."""
+    """Retrieve distinct document filenames specifically uploaded to this chat session."""
     try:
         filenames = documents_collection.distinct("filename", {"user_id": tenant, "chat_id": chat_id})
-        if not filenames:
-            filenames = documents_collection.distinct("filename", {"user_id": tenant})
         return filenames
     except Exception as e:
         logger.warning(f"Failed to query chat document names: {e}")
         return []
+
 
 
 @traceable(name="Document QA ReAct Turn", run_type="chain")
