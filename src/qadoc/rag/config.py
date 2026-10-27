@@ -23,7 +23,6 @@ logger = logging.getLogger(__name__)
 # Re-export key constants for convenience
 CHUNK_SIZE = settings.chunk_size
 CHUNK_OVERLAP = settings.chunk_overlap
-TOP_K = settings.top_k
 FETCH_K = settings.fetch_k
 RERANK_TOP_N = settings.rerank_top_n
 RERANK_MODEL = settings.jina_rerank_model
@@ -37,19 +36,13 @@ embeddings = JinaEmbeddings(
     model_name=settings.jina_model,
 )
 
-# 2. Groq LLM (OpenAI GPT-OSS-20B via Groq LPU)
+# 2. Groq Cloud Reasoning LLM for ReAct Agent
 llm = ChatGroq(
     model=settings.groq_model,
     api_key=SecretStr(settings.groq_api_key),
     temperature=settings.llm_temperature,
 )
 
-# Rephrase LLM (same reasoning model with lower temperature)
-rephrase_llm = ChatGroq(
-    model=settings.groq_rephrase_model,
-    api_key=SecretStr(settings.groq_api_key),
-    temperature=settings.rephrase_temperature,
-)
 
 # 3. MongoDB Atlas Vector Store Singleton
 _vector_store: MongoDBAtlasVectorSearch | None = None

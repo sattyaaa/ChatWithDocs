@@ -68,15 +68,9 @@ class Settings(BaseSettings):
     groq_model: str = Field(
         "openai/gpt-oss-120b",
         validation_alias=AliasChoices("GROQ_MODEL", "groq_model"),
-        description="Primary LLM for QA answer generation",
+        description="Reasoning LLM for the ReAct Agent",
     )
-    groq_rephrase_model: str = Field(
-        "openai/gpt-oss-20b",
-        validation_alias=AliasChoices("GROQ_REPHRASE_MODEL", "groq_rephrase_model"),
-        description="LLM used for condensing conversation turns into standalone search queries",
-    )
-    llm_temperature: float = Field(0.2, description="Temperature for final answer generation")
-    rephrase_temperature: float = Field(0.1, description="Temperature for query rephrasing")
+    llm_temperature: float = Field(0.2, description="Temperature for agent reasoning and answer generation")
 
     # ==========================================
     # 3. Jina AI (Embeddings & Reranker)
@@ -111,16 +105,14 @@ class Settings(BaseSettings):
     # ==========================================
     # 5. RAG Retrieval & Reranking Settings
     # ==========================================
-    top_k: int = Field(5, description="Final number of top reranked chunks passed to LLM")
     fetch_k: int = Field(10, description="Stage 1 candidates retrieved from Atlas Vector Search")
-    rerank_top_n: int = Field(5, description="Stage 2 top reranked chunks")
+    rerank_top_n: int = Field(5, description="Stage 2 top reranked chunks returned by Jina Reranker")
 
     # ==========================================
     # 6. Conversation History Window Limits
     # ==========================================
     history_fetch_limit: int = Field(11, description="Max messages loaded from MongoDB for context")
-    history_rephrase_limit: int = Field(10, description="Messages passed to query rephraser (~5 turns)")
-    history_qa_limit: int = Field(6, description="Messages passed to final QA prompt (~3 turns)")
+    history_qa_limit: int = Field(6, description="Messages passed to ReAct agent context window (~3 turns)")
 
 
 # Export a global singleton instance

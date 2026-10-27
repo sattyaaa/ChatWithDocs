@@ -7,11 +7,9 @@ Framework-agnostic: Pure Python, zero UI dependencies.
 from qadoc.rag.config import (
     embeddings,
     llm,
-    rephrase_llm,
     get_vector_store,
     COLLECTION_NAME,
     INDEX_NAME,
-    TOP_K,
 )
 
 from qadoc.rag.ingestion import (
@@ -37,11 +35,9 @@ from qadoc.rag.graph import (
 __all__ = [
     "embeddings",
     "llm",
-    "rephrase_llm",
     "get_vector_store",
     "COLLECTION_NAME",
     "INDEX_NAME",
-    "TOP_K",
     "ingest_documents",
     "delete_chat_embeddings",
     "retrieve_candidates",

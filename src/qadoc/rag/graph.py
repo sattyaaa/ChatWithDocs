@@ -12,7 +12,6 @@ Framework-agnostic: Pure Python, zero UI dependencies.
 """
 
 import logging
-from typing import List
 from langchain_core.documents import Document
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 from langgraph.prebuilt import create_react_agent

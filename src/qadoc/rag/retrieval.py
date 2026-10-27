@@ -16,7 +16,6 @@ from qadoc.rag.config import (
     RERANK_TOP_N,
     RERANK_MODEL,
     JINA_API_KEY,
-    TOP_K,
     get_vector_store,
 )
 
