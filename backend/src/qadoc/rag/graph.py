@@ -13,15 +13,15 @@ Framework-agnostic: Pure Python, zero UI dependencies.
 
 import logging
 from langchain_core.documents import Document
-from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
+from langchain_core.messages import HumanMessage, AIMessage, ToolMessage, SystemMessage
 from langgraph.prebuilt import create_react_agent
 from langsmith import traceable
 
 from qadoc.config import settings
 from qadoc.rag.config import llm
 from qadoc.rag.tools import retrieve_document_context
-from qadoc.rag.prompts import REACT_AGENT_SYSTEM_PROMPT
-from qadoc.database.connection import get_recent_chat_messages
+from qadoc.rag.prompts import get_agent_system_prompt
+from qadoc.database.connection import get_recent_chat_messages, documents_collection
 
 logger = logging.getLogger(__name__)
 
@@ -29,8 +29,19 @@ logger = logging.getLogger(__name__)
 agent_executor = create_react_agent(
     model=llm,
     tools=[retrieve_document_context],
-    prompt=REACT_AGENT_SYSTEM_PROMPT,
 )
+
+
+def get_chat_documents(chat_id: str, tenant: str) -> list[str]:
+    """Retrieve distinct document filenames accessible in this chat session."""
+    try:
+        filenames = documents_collection.distinct("filename", {"user_id": tenant, "chat_id": chat_id})
+        if not filenames:
+            filenames = documents_collection.distinct("filename", {"user_id": tenant})
+        return filenames
+    except Exception as e:
+        logger.warning(f"Failed to query chat document names: {e}")
+        return []
 
 
 @traceable(name="Document QA ReAct Turn", run_type="chain")
@@ -56,7 +67,11 @@ def ask_question(
             - 'sources' (list[Document]): List of retrieved LangChain documents with relevance scores.
     """
     try:
-        # 1. Fetch and prune conversation history from MongoDB
+        # 1. Fetch available documents in this session
+        uploaded_files = get_chat_documents(chat_id=chat_id, tenant=tenant)
+        system_prompt = get_agent_system_prompt(uploaded_files=uploaded_files)
+
+        # 2. Fetch and prune conversation history from MongoDB
         raw_history = get_recent_chat_messages(
             chat_id=chat_id,
             limit=settings.history_fetch_limit,
@@ -68,7 +83,7 @@ def ask_question(
         # Apply context pruning to the configured QA limit
         pruned_history = history_messages[-settings.history_qa_limit:]
 
-        formatted_messages = []
+        formatted_messages = [SystemMessage(content=system_prompt)]
         for msg in pruned_history:
             role = msg.get("role")
             content = msg.get("content", "")

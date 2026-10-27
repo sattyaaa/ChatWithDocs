@@ -18,6 +18,7 @@ from qadoc.rag.config import (
     JINA_API_KEY,
     get_vector_store,
 )
+from qadoc.database.connection import documents_collection
 
 logger = logging.getLogger(__name__)
 
@@ -29,12 +30,19 @@ def _build_filter(
 ) -> dict:
     """
     Builds a MongoDB Atlas Vector Search pre-filter expression.
-    Atlas Vector Search filter syntax requires direct scalar values for equality.
+    Filters by user_id and chat_id if documents exist in this chat,
+    otherwise falls back to searching across all documents uploaded by this user.
     """
-    filters: dict = {
-        "user_id": tenant,
-        "chat_id": chat_id,
-    }
+    has_chat_docs = documents_collection.find_one({"user_id": tenant, "chat_id": chat_id})
+    if has_chat_docs:
+        filters: dict = {
+            "user_id": tenant,
+            "chat_id": chat_id,
+        }
+    else:
+        filters = {
+            "user_id": tenant,
+        }
 
     if document_ids:
         filters["document_id"] = {"$in": document_ids}
