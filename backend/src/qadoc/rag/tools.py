@@ -66,9 +66,27 @@ def retrieve_document_context(
     if not reranked:
         return "No relevant sections could be matched after reranking.", []
 
+    # Threshold to prevent hallucination leaks from low-scoring irrelevant chunks
+    MIN_RELEVANCE_SCORE = 0.20
+    relevant_docs = [
+        doc
+        for doc in reranked
+        if doc.metadata.get("relevance_score") is None or doc.metadata.get("relevance_score") >= MIN_RELEVANCE_SCORE
+    ]
+
+    if not relevant_docs:
+        logger.info(
+            f"All reranked candidates fell below relevance threshold ({MIN_RELEVANCE_SCORE}) for query: '{query}'"
+        )
+        return (
+            "No relevant sections matching this query were found in the uploaded documents. "
+            "All candidate chunks fell below the relevance confidence threshold.",
+            [],
+        )
+
     # Format text context for the agent
     context_parts: list[str] = []
-    for i, doc in enumerate(reranked, 1):
+    for i, doc in enumerate(relevant_docs, 1):
         filename = doc.metadata.get("filename", "Unknown Document")
         page = doc.metadata.get("page")
         page_str = f"Page {page}" if page is not None else "Page N/A"
@@ -80,4 +98,5 @@ def retrieve_document_context(
         )
 
     formatted_context = "\n\n".join(context_parts)
-    return formatted_context, reranked
+    return formatted_context, relevant_docs
+
