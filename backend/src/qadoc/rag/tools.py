@@ -66,8 +66,8 @@ def retrieve_document_context(
     if not reranked:
         return "No relevant sections could be matched after reranking.", []
 
-    # Threshold to prevent hallucination leaks from low-scoring irrelevant chunks
-    MIN_RELEVANCE_SCORE = 0.20
+    # Minimal noise floor threshold (cross-encoder sigmoid scores on dense text often range from 0.03 to 0.25)
+    MIN_RELEVANCE_SCORE = 0.02
     relevant_docs = [
         doc
         for doc in reranked

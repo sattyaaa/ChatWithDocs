@@ -112,6 +112,14 @@ export default function App() {
     }
   };
 
+  // Keep focus on prompt textarea
+  useEffect(() => {
+    if (activeTab === 'chat' && !isLoadingAnswer) {
+      textareaRef.current?.focus();
+    }
+  }, [activeTab, isLoadingAnswer, activeChatId]);
+
+
 
   const scrollToBottom = () => {
     setTimeout(() => {
@@ -207,7 +215,11 @@ export default function App() {
     } finally {
       setIsLoadingAnswer(false);
       scrollToBottom();
+      setTimeout(() => {
+        textareaRef.current?.focus();
+      }, 50);
     }
+
   };
 
   const handleKeyDown = (e) => {
@@ -379,8 +391,8 @@ export default function App() {
                   value={inputPrompt}
                   onChange={handleInputResize}
                   onKeyDown={handleKeyDown}
-                  disabled={isLoadingAnswer}
                 />
+
 
                 <button
                   type="submit"

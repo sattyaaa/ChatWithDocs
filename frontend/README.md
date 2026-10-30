@@ -1,35 +1,33 @@
-# QADoc — React + Vite Frontend
+# QADoc Frontend
 
-Modern, distraction-free document QA chat interface inspired by the minimalist aesthetics of Claude and ChatGPT.
-
----
-
-## 🎨 User Interface & Features
-
-* **Minimalist Light Aesthetic:** Refined typography (Inter), subtle borders, soft message bubbles, and smooth micro-animations.
-* **Navigation Tabs:**
-  * **`💬 Chat`**: Main conversational message stream and floating input dock.
-  * **`📁 Documents (N)`**: Ingested files manager displaying searchable vector chunk counts and file deletion controls.
-* **Interactive Citations:**
-  * Source badges displaying document name, page number, and cross-encoder relevance match score (e.g. `85% match`).
-  * Clickable pills that open an excerpt inspection modal with the exact retrieved text.
-* **Dynamic Animations:** Active rotating loading animations during file ingestion and while the ReAct agent is querying documents.
-* **Auto-Resizing Input Dock:** Floating prompt bar with auto-expanding textarea, drag-and-drop file attachment, and keyboard shortcuts (`Enter` to send, `Shift+Enter` for newline).
-* **Multi-Chat Sidebar:** Create, switch, and delete chat sessions with auto-generated topic titles.
+React 19 single-page application built with Vite, styled with a minimalist light aesthetic.
 
 ---
 
-## 🛠️ Technology Stack
+## Component Layout
 
-* **Build Tool:** [Vite](https://vitejs.dev/)
-* **UI Framework:** [React 19](https://react.dev/)
-* **Icons:** [Lucide React](https://lucide.dev/)
-* **Markdown Rendering:** [react-markdown](https://github.com/remarkjs/react-markdown) + [remark-gfm](https://github.com/remarkjs/remark-gfm)
-* **Styling:** Vanilla CSS with custom tokens, flexbox/grid, and keyframe animations.
+```mermaid
+flowchart TD
+    App[App Container] --> Sidebar[Sidebar: Sessions & Profile]
+    App --> Header[Header: Tab Navigation]
+    App --> Views[Views: Chat Stream / Document Manager]
+    App --> Input[Floating Input Dock]
+    App --> Modals[Modals: Upload / Citations]
+```
 
 ---
 
-## 🚀 Development & Build
+## Features
+
+- **Chat Interface:** Conversation history rendered with `react-markdown`, interactive citation badges, and auto-scrolling message stream.
+- **Interactive Citations:** Clickable source badges showing file name, page, and match score that open full-text excerpt modals.
+- **Document Management:** Dedicated tab showing ingested files, vector chunk counts, and file-level chunk deletion.
+- **Floating Input Dock:** Auto-resizing textarea with file drag-and-drop ingestion and keyboard shortcuts (`Enter` to send, `Shift+Enter` for newline).
+- **Session Management:** Multi-chat sidebar with automatic title generation from the conversation topic.
+
+---
+
+## Running Locally
 
 ### 1. Install Dependencies
 ```bash
@@ -37,14 +35,15 @@ cd frontend
 npm install
 ```
 
-### 2. Run Local Development Server
+### 2. Start Development Server
 ```bash
 npm run dev
 ```
-Open `http://localhost:5173`. Vite automatically proxies `/api` requests to the FastAPI backend running on `http://localhost:8000`.
+
+The application runs at `http://localhost:5173`. API requests to `/api` are automatically proxied to the backend at `http://localhost:8000`.
 
 ### 3. Production Build
 ```bash
 npm run build
 ```
-Generates optimized static assets in `dist/`.
+Outputs optimized static assets to `dist/`.

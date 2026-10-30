@@ -34,6 +34,13 @@ backend/data/
 uploads/
 !**/data/uploads/.gitkeep
 
+# Local Documentation & Reports
+PROJECT_README_REPORT.md
+REPORT_BLUEPRINT.md
+*REPORT*.md
+*report*.pdf
+*report*.docx
+
 # IDE and Operating System files
 .vscode/
 .idea/

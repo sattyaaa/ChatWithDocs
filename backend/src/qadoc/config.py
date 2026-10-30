@@ -105,7 +105,7 @@ class Settings(BaseSettings):
     # ==========================================
     # 5. RAG Retrieval & Reranking Settings
     # ==========================================
-    fetch_k: int = Field(10, description="Stage 1 candidates retrieved from Atlas Vector Search")
+    fetch_k: int = Field(15, description="Stage 1 candidates retrieved from Atlas Vector Search")
     rerank_top_n: int = Field(5, description="Stage 2 top reranked chunks returned by Jina Reranker")
 
     # ==========================================
