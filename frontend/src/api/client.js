@@ -3,7 +3,10 @@
  * Uses standard fetch with JSON handling.
  */
 
-const BASE_URL = '/api';
+const API_HOST = import.meta.env.VITE_API_URL
+  ? import.meta.env.VITE_API_URL.replace(/\/$/, '')
+  : '';
+const BASE_URL = `${API_HOST}/api`;
 
 export async function loginUser(username, password) {
   const res = await fetch(`${BASE_URL}/auth/login`, {
