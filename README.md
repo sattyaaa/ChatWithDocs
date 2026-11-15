@@ -1,6 +1,10 @@
 # QADoc
 
+[![Live Demo](https://img.shields.io/badge/Demo-Live_on_Render-46E3B7?logo=render&logoColor=white)](https://chatwithdocs-rc1m.onrender.com/)
+
 Agentic document question-answering system using a decoupled FastAPI backend, a LangGraph ReAct agent, and a React 19 single-page interface.
+
+Live Demo: [QADoc - Document QA Assistant](https://chatwithdocs-rc1m.onrender.com/)
 
 ---
 
